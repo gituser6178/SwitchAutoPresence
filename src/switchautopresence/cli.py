@@ -63,6 +63,8 @@ def make_parser() -> argparse.ArgumentParser:
     app.add_argument("--width", type=int, default=1920)
     app.add_argument("--height", type=int, default=1080)
     app.add_argument("--fps", type=int, default=60)
+    app.add_argument("--discord-direct", action="store_true",
+                     help="Let Discord own capture-card video and keep local HDMI sound in this app")
     app.add_argument("--app-id", default=os.environ.get("SWITCHAUTOPRESENCE_DISCORD_APP_ID"),
                      help="Discord Developer Application ID (public, not a user token)")
     app.add_argument("--roi", default="0.08,0.19,0.84,0.19")
@@ -252,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
                 catalog=GameCatalog.from_file(args.titles),
                 artwork=ArtworkCatalog.from_file(args.artwork),
             )
+            if args.discord_direct:
+                runtime.select_direct()
             run_gui(runtime)
             return 0
         except Exception as exc:
