@@ -95,6 +95,7 @@ class Runtime:
     def select_manual(self, title: str, image: str | None = None) -> None:
         if image is not None:
             _validate_asset(image)
+        self.error = None  # Clear any obsolete capture error on mode switch
         self.session.set_manual(title)
         if image is not None:
             self.artwork.set_game(title, image)
@@ -105,11 +106,13 @@ class Runtime:
         self._persist()
 
     def select_auto(self) -> None:
+        self.error = None
         self.session.resume_auto()
         self._dark_count = 0
         self._persist()
 
     def clear(self) -> None:
+        self.error = None
         self.session.clear()
         self._persist()
 
