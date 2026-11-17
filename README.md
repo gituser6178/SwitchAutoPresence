@@ -4,6 +4,16 @@ An **unofficial Windows utility** for sharing Nintendo Switch and Switch 2 games
 
 > **v0.3 pre-alpha / Windows hardware validation pending.** The application owns a single capture-card video stream, displays an optional streamable preview window, inspects the same frames for HOME-menu titles, and updates Discord Rich Presence. It is not a production-quality streamer, and audio sharing is **experimental**.
 
+## Agreed development direction
+
+**Streaming reliability comes first:** measured 60 FPS preview and confirmed HDMI audio in Discord, then working manual Discord Presence with artwork. Automatic recognition remains useful but must not block a release.
+
+For automatic detection, the next design uses a **local image reference library** to recognize the selected game tile **on HOME only** (not arbitrary gameplay), with OCR as a fallback. It remembers the last confirmed active game through loading/cutscene frames. A highlighted HOME tile is *not* treated as playing, and a HOME return cannot reliably distinguish suspension from closing the game.
+
+Users can add locally captured/owned tile references through a proposed **Add Game Image** flow; the public repository will not redistribute copyrighted game covers.
+
+**This is a locked design decision, not yet a completed feature.** The current v0.3 build still uses experimental HOME OCR and a heuristic launch detector. See [Product direction and acceptance tests](docs/PRODUCT_DIRECTION.md).
+
 ## How it works
 
 ~~~text
