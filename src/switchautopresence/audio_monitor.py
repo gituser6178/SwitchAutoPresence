@@ -182,74 +182,179 @@ def probe_audio_input(
 
 
 class AudioMonitor:
-    """Play HDMI audio to Windows output; should be audible in application share."""
+    """Route GC553Pro HDMI audio into Windows playback without Windows Listen.
+
+    Matching input/output host APIs and rates use a simple duplex Stream.
+    Mismatched APIs (e.g. WASAPI input 14 + MME output 5) or rates use separate
+    InputStream and OutputStream instances plus a bounded resampling FIFO.
+    """
 
     def __init__(self, input_device: int, output_device: int | None = None, *, backend=None):
-        if input_device < 0 or output_device is not None and output_device < 0:
+        if input_device < 0 or (output_device is not None and output_device < 0):
             raise ValueError("Audio device indices must be >= 0")
         self.input_device = input_device
         self.output_device = output_device
         self.backend = backend
         self._stream = None
+        self._streams = []
+        self._bridge = None
+        self.output_endpoint: int | None = None
+        self.input_rate: int | None = None
+        self.output_rate: int | None = None
+        self.route_mode: str | None = None
         self.meter = AudioMeter()
         self.error: str | None = None
 
     @property
     def running(self) -> bool:
-        return self._stream is not None
+        return bool(self._streams)
 
     def levels(self) -> dict:
-        return self.meter.report()
+        report = self.meter.report()
+        report.update(
+            route_mode=self.route_mode,
+            output_endpoint=self.output_endpoint,
+            input_rate=self.input_rate,
+            output_rate=self.output_rate,
+        )
+        if self._bridge is not None:
+            report.update(self._bridge.stats())
+        return report
 
     def start(self) -> None:
-        if self._stream is not None:
+        if self.running:
             return
+        from .audio_bridge import AudioBridge
         sd = _backend(self.backend)
         input_info = sd.query_devices(self.input_device, "input")
         output_id = self.output_device
         if output_id is None:
             output_id = sd.default.device[1]
+        if output_id is None or int(output_id) < 0:
+            raise RuntimeError("No Windows default audio output. Select a playback endpoint.")
+        output_id = int(output_id)
         output_info = sd.query_devices(output_id, "output")
-        channels = min(2, int(input_info["max_input_channels"]), int(output_info["max_output_channels"]))
+        channels = min(
+            2, int(input_info["max_input_channels"]), int(output_info["max_output_channels"]),
+        )
         if channels < 1:
-            raise ValueError("Selected audio endpoints must both have at least one channel")
+            raise ValueError("Selected audio endpoints must both have an active channel")
+        input_rate = int(round(float(input_info.get("default_samplerate") or 48000)))
+        output_rate = int(round(float(output_info.get("default_samplerate") or 48000)))
+        input_hostapi = input_info.get("hostapi", -1)
+        output_hostapi = output_info.get("hostapi", -1)
 
-        def callback(indata, outdata, frames, timestamp, status):
-            if status:
-                self.error = f"Audio callback warning: {status}"
-            self.meter.observe(indata)
-            # Output through THIS Python process for possible Discord app audio capture.
-            # No remote upload and no disk write.
-            outdata[:] = indata
+        self.input_rate = input_rate
+        self.output_rate = output_rate
+        self.output_endpoint = output_id
+        started = []
+        opened = []
+        self._bridge = None
 
         try:
-            stream = sd.Stream(
-                samplerate=48000,
-                blocksize=0,
-                device=(self.input_device, output_id),
-                channels=channels,
-                dtype="float32",
-                latency="low",
-                callback=callback,
-            )
-            try:
+            if input_hostapi == output_hostapi and input_rate == output_rate:
+                self.route_mode = "duplex"
+                def duplex_callback(indata, outdata, frames, timestamp, status):
+                    if status:
+                        self.error = f"Audio callback warning: {status}"
+                    self.meter.observe(indata)
+                    outdata[:] = indata
+
+                stream = sd.Stream(
+                    samplerate=input_rate,
+                    blocksize=0,
+                    device=(self.input_device, output_id),
+                    channels=channels,
+                    dtype="float32",
+                    latency="low",
+                    callback=duplex_callback,
+                )
+                opened.append(stream)
                 stream.start()
-            except Exception:
-                stream.close()
-                raise
+                started.append(stream)
+            else:
+                # PortAudio requires one host API for each stream. These two
+                # independently clocked streams can use different APIs/rates.
+                self.route_mode = "separate"
+                bridge = AudioBridge(
+                    input_rate=input_rate, output_rate=output_rate, channels=channels,
+                )
+                self._bridge = bridge
+
+                def input_callback(indata, frames, timestamp, status):
+                    if status:
+                        self.error = f"Audio input warning: {status}"
+                    self.meter.observe(indata)
+                    bridge.push(indata)
+
+                def output_callback(outdata, frames, timestamp, status):
+                    if status:
+                        self.error = f"Audio output warning: {status}"
+                    outdata[:] = bridge.pull(frames)
+
+                inp = sd.InputStream(
+                    samplerate=input_rate,
+                    device=self.input_device,
+                    channels=channels,
+                    dtype="float32",
+                    blocksize=0,
+                    latency="low",
+                    callback=input_callback,
+                )
+                opened.append(inp)
+                out = sd.OutputStream(
+                    samplerate=output_rate,
+                    device=output_id,
+                    channels=channels,
+                    dtype="float32",
+                    blocksize=0,
+                    latency="low",
+                    callback=output_callback,
+                )
+                opened.append(out)
+                inp.start()
+                started.append(inp)
+                out.start()
+                started.append(out)
         except Exception as exc:
+            for stream in reversed(started):
+                try:
+                    stream.stop()
+                except Exception:
+                    pass
+            for stream in reversed(opened):
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            self._stream = None
+            self._streams = []
+            self._bridge = None
+            self.route_mode = None
             raise RuntimeError(
-                f"Could not monitor audio: input {self.input_device}, output {output_id}. "
-                f"PortAudio: {exc}. Check the host APIs and set both Windows audio "
-                "endpoints to 48000 Hz; different host APIs may not support a duplex stream."
+                f"HDMI audio routing failed: input {self.input_device} "
+                f"({input_rate} Hz, host API {input_hostapi}), output {output_id} "
+                f"({output_rate} Hz, host API {output_hostapi}). Details: {exc}"
             ) from exc
-        self._stream = stream
+
+        self._streams = opened
+        self._stream = opened[-1]
         self.error = None
 
     def stop(self) -> None:
-        stream, self._stream = self._stream, None
-        if stream is not None:
+        streams, self._streams = self._streams, []
+        self._stream = None
+        self._bridge = None
+        first_error = None
+        for stream in reversed(streams):
             try:
                 stream.stop()
-            finally:
+            except Exception as exc:
+                first_error = first_error or exc
+            try:
                 stream.close()
+            except Exception as exc:
+                first_error = first_error or exc
+        self.route_mode = None
+        if first_error is not None:
+            raise RuntimeError(f"Unable to release audio endpoint: {first_error}") from first_error
