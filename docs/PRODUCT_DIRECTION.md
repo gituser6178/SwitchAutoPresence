@@ -67,3 +67,17 @@ The current v0.3 draft PR still implements HOME OCR and a heuristic launch state
 - [ ] Verify covered-window capture with the user's Discord client and actual Windows Graphics Capture mode
 - [ ] If a truly invisible source is required, design/test an alternative **virtual capture/display** architecture; a hidden/minimized Tkinter HWND is **not** a reliable Discord source
 - [ ] Measure CPU usage and actual sustained preview/Discord frame rate during occluded streaming
+
+## Native Discord capture instead of Tk preview (November 2026)
+
+An observed system delivered **59.8 FPS capture** but only around **39 FPS** in the Tkinter stream window; directly selecting the GC553Pro within Discord delivered noticeably smoother video and remote game audio. **Preferred route: Discord Direct mode** for streaming; SwitchAutoPresence runs its HDMI audio monitor and optional manually chosen Rich Presence **without opening the video device**. This makes our low-FPS preview irrelevant for everyday streaming.
+
+- [x] Added explicit **Discord Direct** mode which releases video capture but keeps local HDMI audio active.
+- [x] Manual game selection also leaves local HDMI audio running.
+- [x] Persist Direct mode across restarts so the application doesn't seize video before Discord.
+- [x] Restore/quit/mute controls in an opt-in Windows system tray icon.
+- [x] The app's optional source window opens in the foreground for Discord picker, not permanently topmost.
+- [ ] Validate concurrent Discord direct GC553Pro video + in-app HDMI audio on user's Windows machine.
+- [ ] Validate tray lifecycle and playback when GUI is hidden.
+- [ ] Keep the Tk preview as an optional experimental feature, not the recommended direct-stream workflow.
+
