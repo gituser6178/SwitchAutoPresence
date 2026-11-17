@@ -58,3 +58,12 @@ Use game title metadata separate from reference image bytes. Do not bundle copyr
 ## Scope of existing prototype
 
 The current v0.3 draft PR still implements HOME OCR and a heuristic launch state. The visual-library matcher and image-management UI are **planned**, not yet implemented. Do not mark the new matcher as done based on the existing OCR test suite or assume hardware support from mock unit tests.
+
+## Stream-window rendering policy (November 2026)
+
+- [x] Disable and release the duplicate main GUI video preview entirely while the Discord-streamable source window exists; restore when it closes
+- [x] Launch the stream source in the **background** rather than foreground or always-on-top, and keep rendering to that source while it is covered by normal Windows apps
+- [x] Provide a **Show stream for Discord picker** recovery button to raise it if Discord fails to enumerate the source
+- [ ] Verify covered-window capture with the user's Discord client and actual Windows Graphics Capture mode
+- [ ] If a truly invisible source is required, design/test an alternative **virtual capture/display** architecture; a hidden/minimized Tkinter HWND is **not** a reliable Discord source
+- [ ] Measure CPU usage and actual sustained preview/Discord frame rate during occluded streaming
