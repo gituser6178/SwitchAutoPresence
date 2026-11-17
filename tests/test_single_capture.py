@@ -383,3 +383,39 @@ def test_cli_accepts_audio_test():
     args = make_parser().parse_args(["audio-test", "--input", "3", "--seconds", "6"])
     assert args.input == 3
     assert args.seconds == 6
+
+
+def test_audio_test_distinguishes_sparse_peaks_from_silence():
+    from switchautopresence.audio_monitor import probe_audio_input
+    class SparseProbeBackend(FakeProbeBackend):
+        def InputStream(self, **kwargs):
+            class SparseStream(FakeProbeStream):
+                def start(self):
+                    self.started = True
+                    samples = np.zeros((480, self.kwargs["channels"]), dtype=np.float32)
+                    samples[0, 0] = .03
+                    self.kwargs["callback"](samples, 480, None, None)
+            self.stream = SparseStream(**kwargs)
+            return self.stream
+    result = probe_audio_input(9, seconds=1, backend=SparseProbeBackend(), wait=lambda _: None)
+    assert result["status"] == "weak_signal"
+    assert result["has_peaks"] and not result["has_signal"]
+    assert result["peak_dbfs"] > -35
+
+
+def test_audio_test_classifies_true_silence():
+    from switchautopresence.audio_monitor import probe_audio_input
+    class ZeroProbeBackend(FakeProbeBackend):
+        def InputStream(self, **kwargs):
+            class ZeroStream(FakeProbeStream):
+                def start(self):
+                    self.started = True
+                    self.kwargs["callback"](
+                        np.zeros((480, self.kwargs["channels"]), dtype=np.float32),
+                        480, None, None,
+                    )
+            self.stream = ZeroStream(**kwargs)
+            return self.stream
+    result = probe_audio_input(9, seconds=1, backend=ZeroProbeBackend(), wait=lambda _: None)
+    assert result["status"] == "silent"
+    assert not result["has_peaks"]
