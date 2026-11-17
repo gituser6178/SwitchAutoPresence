@@ -126,11 +126,18 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"RMS: {result['rms_dbfs']:.1f} dBFS | "
                       f"Peak: {result['peak_dbfs']:.1f} dBFS | "
                       f"Blocks: {result['blocks']}")
-                if result["status"] == "silent":
-                    print("No meaningful audio detected. Play Switch game sounds, "
-                          "check HDMI volume, or try a different AVerMedia input index.")
+                if result["status"] == "weak_signal":
+                    print("Only weak or intermittent peaks detected. This may be game audio "
+                          "or noise; set Switch 2 TV Sound to Stereo, use Test Output or "
+                          "continuous game music, and retest.")
+                elif result["status"] == "silent":
+                    print("Input is nearly silent. Check Switch 2 TV Sound: Stereo, "
+                          "audio source, HDMI connection and Windows input levels.")
+                elif result["status"] == "no_frames":
+                    print("No audio sample blocks arrived; check Windows recording permissions "
+                          "and whether another application has exclusive input access.")
                 else:
-                    print("Input detected. Next enable audio monitoring inside "
+                    print("Strong input signal detected. Next enable audio monitoring inside "
                           "SwitchAutoPresence, then test Discord's Share audio with a listener.")
                 for warning in result["warnings"]:
                     print("Audio warning:", warning)
