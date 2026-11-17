@@ -149,3 +149,11 @@ Code is **MIT-licensed**. Nintendo, Discord, and AVerMedia are unaffiliated with
 - When recognition fails, the controller shows the **last HOME OCR text** and candidate title. If the candidate remains `none`, `scan-device` can help tune the OCR region.
 - The project now uses **opencv-python 4.x** as its sole OpenCV dependency. If you previously installed both OpenCV variants in the virtual environment, uninstall both and reinstall `.[all]` once.
 - Audio is still **experimental**: choose the AVerMedia HDMI audio endpoint and confirm a remote Discord listener hears the sound when application audio sharing is enabled.
+
+### Improved HOME title recognition
+
+- Recognition now isolates the Switch 2's cyan game-title line and tries recognition-only OCR before default OCR.
+- Neutral-gray game loading frames are no longer automatically classified as HOME without title evidence.
+- Two consecutive HOME observations are required before interrupting active gameplay.
+- The scan-device command reports OCR method (cyan_line, normal_ocr, cyan_title_unreadable, neutral_without_title), recognized text and matched game.
+- If a title remains unknown, run scan-device while highlighting Zelda on HOME and share its text output. Do not upload captured gameplay.

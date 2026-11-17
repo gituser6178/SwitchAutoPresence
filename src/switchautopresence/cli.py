@@ -140,7 +140,8 @@ def main(argv: list[str] | None = None) -> int:
                     count += 1
                     if args.command == "scan-window":
                         result = recognizer.analyze(item[1])
-                        print(f"Frame {count}: {result.kind.value} | title={result.title or '-'} | OCR={result.raw_text[:140]}")
+                        print(f"Frame {count}: {result.kind.value} | title={result.title or '-'} | "
+                              f"method={result.method} | OCR={result.raw_text[:140]}")
                     else:
                         print(f"Sample {count}: {item[1].shape[1]}x{item[1].shape[0]}")
                 if not count:
@@ -176,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
                         result = recognizer.analyze(packet.bgr)
                         count += 1
                         print(f"Frame {count}: {result.kind.value} | selected={result.title or '-'} | "
+                              f"method={result.method} | confidence={result.confidence:.2f} | "
                               f"OCR={result.raw_text[:140]}")
                     sleep(.1)
                 if not count:

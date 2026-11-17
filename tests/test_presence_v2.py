@@ -417,3 +417,50 @@ def test_home_selection_change_replaces_candidate():
 def test_ocr_miss_tolerance_validated():
     with pytest.raises(ValueError):
         Session(ocr_miss_tolerance=-1)
+
+
+def test_neutral_loading_screen_without_title_is_not_home():
+    frame = np.full((600, 1000, 3), 119, dtype=np.uint8)
+    result = HomeRecognizer(GameCatalog(), engine=StubOCR([], [])).analyze(frame)
+    assert result.kind == FrameKind.OTHER
+    assert result.method == "neutral_without_title"
+
+
+def test_cyan_zelda_title_uses_recognition_only_fallback():
+    import cv2
+    frame = home_image()
+    cv2.putText(
+        frame, "The Legend of Zelda: Ocarina of Time", (105, 180),
+        cv2.FONT_HERSHEY_SIMPLEX, .75, (235, 222, 85), 2,
+    )
+    class DirectOCR:
+        def __init__(self):
+            self.use_det_values = []
+        def __call__(self, img, **kwargs):
+            self.use_det_values.append(kwargs.get("use_det"))
+            return type("R", (), {
+                "txts": ("The Legend of Zelda: Ocarina of Time",),
+                "scores": (.97,),
+            })()
+    engine = DirectOCR()
+    result = HomeRecognizer(GameCatalog(), engine=engine).analyze(frame)
+    assert result.kind == FrameKind.HOME
+    assert result.title == "The Legend of Zelda: Ocarina of Time"
+    assert result.method == "cyan_line"
+    assert engine.use_det_values == [False]
+
+
+def test_one_false_home_frame_does_not_reset_confirmed_playing(tmp_path):
+    app = runtime(tmp_path)
+    frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    app.recognizer = FakeClassifier(FrameKind.HOME, "Pokémon Violet")
+    app._observe(frame)
+    app.recognizer = FakeClassifier(FrameKind.OTHER)
+    for _ in range(3):
+        app._observe(frame)
+    assert app.session.snapshot().screen == Screen.PLAYING
+    app.recognizer = FakeClassifier(FrameKind.HOME)
+    app._observe(frame)
+    assert app.session.snapshot().screen == Screen.PLAYING
+    app._observe(frame)
+    assert app.session.snapshot().screen == Screen.HOME

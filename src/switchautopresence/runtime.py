@@ -18,7 +18,7 @@ from .device_stream import DeviceStream, VideoOptions
 from .discord_presence import DiscordPublisher
 from .recognition import FrameKind, HomeRecognizer
 from .settings import load_mode, save_mode, load_artwork, save_artwork
-from .state import Mode, Session
+from .state import Mode, Screen, Session
 
 LOG = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ class Runtime:
         self._last_sequence = 0
         self._next_recognition = 0.0
         self._last_home_ocr = None  # last HOME OCR result retained for diagnosis
+        self._home_streak = 0
         self._audio: AudioMonitor | None = None
         self.error: str | None = None
         mode, manual = load_mode(settings_file)
@@ -110,6 +111,7 @@ class Runtime:
         self.error = None
         self.session.resume_auto()
         self._last_home_ocr = None
+        self._home_streak = 0
         self._dark_count = 0
         self._persist()
 
@@ -174,13 +176,21 @@ class Runtime:
         result = self.recognizer.analyze(frame)
         if result.kind == FrameKind.HOME:
             self._last_home_ocr = result
+            self._home_streak += 1
             self._dark_count = 0
+            # Require two independent HOME observations before interrupting
+            # gameplay; gray loading screens can briefly mimic HOME.
+            screen = self.session.snapshot().screen
+            if screen in (Screen.LAUNCHING, Screen.PLAYING, Screen.UNKNOWN) and self._home_streak < 2:
+                return
             self.session.home(result.title)
         elif result.kind == FrameKind.DARK:
+            self._home_streak = 0
             self._dark_count += 1
             if self._dark_count >= 4:
                 self.session.no_signal()
         else:
+            self._home_streak = 0
             self._dark_count = 0
             self.session.non_home()
 
@@ -260,6 +270,7 @@ class Runtime:
             "ocr_text": self._last_home_ocr.raw_text if self._last_home_ocr else "",
             "ocr_confidence": round(self._last_home_ocr.confidence, 2) if self._last_home_ocr else None,
             "ocr_match": self._last_home_ocr.title if self._last_home_ocr else None,
+            "ocr_method": self._last_home_ocr.method if self._last_home_ocr else None,
             "confirmed": snap.confirmed,
             "manual": snap.manual_title,
             "details": snap.activity.details if snap.activity else "No activity",

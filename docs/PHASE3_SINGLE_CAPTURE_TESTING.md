@@ -90,3 +90,11 @@ The GUI requests a 16 ms redraw target and reports actual **capture FPS** and **
 When the app shows HOME → Launching → Unknown, check the `HOME title candidate` and `OCR` status in the controller. If the candidate never becomes a real title, close the app and run `scan-device --device 1 --seconds 12` with Zelda highlighted. Share the diagnostic *text* to calibrate it, not gameplay frames. A few intermittent OCR misses no longer immediately erase a recognized candidate.
 
 Audio sharing is not proven until a remote Discord listener confirms sound (with the AVerMedia HDMI audio input selected and the audio monitor enabled). Turn off the monitor if you hear feedback or duplicate sound.
+
+## RapidOCR finds no text
+
+Some Nintendo Switch 2 HOME screens contain thin cyan text that the default OCR detector misses. The recognizer now attempts a cyan-line crop using recognition-only OCR before regular text detection.
+
+The scan-device diagnostic prints a method and OCR text for each frame. cyan_title_unreadable means the title's color was found but its text could not be read. neutral_without_title means a gray-looking video frame lacked HOME evidence and will not change the game state.
+
+Please provide diagnostic text rather than uploading sensitive footage.
