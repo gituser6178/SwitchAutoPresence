@@ -11,7 +11,7 @@ The GC553Pro on one Windows PC delivers near-60-FPS video **when Discord capture
 
 **Use Discord Direct rather than the app's own stream window for this workflow.**
 
-1. Run `switchautopresence app --device 1` and click **Discord direct**. This releases SwitchAutoPresence's **video** capture handle; the app continues to receive **audio** from the AVerMedia HDMI recording endpoint and plays it through your Windows default output.
+1. Run `switchautopresence app --device 1 --discord-direct` (or click **Discord direct** in the UI). This releases SwitchAutoPresence's **video** capture handle; the app continues to receive **audio** from the AVerMedia HDMI recording endpoint and plays it through your Windows default output.
 2. In Discord, select/capture the **AVerMedia Live Gamer ULTRA S GC553Pro directly**, as you did before. The Discord viewers should receive full-speed video and the card's own audio. Avoid trying to open the same video feed with SwitchAutoPresence at the same time.
 3. Leave **Windows Listen to this device disabled**. SwitchAutoPresence automatically finds and opens HDMI audio for your headphones. The **Mute / Unmute** button silences the app's playback. If you want game-specific Rich Presence, choose **Set manual game** (and configure a Discord Developer Application ID); that does **not** stop local HDMI audio.
 4. Click **Minimize to tray**. The control panel disappears; the capture-card audio relay and Discord Presence keep running. Right-click the SwitchAutoPresence tray icon to **Open**, **Mute / Unmute** or **Exit**. Windows may put the icon behind the system tray's overflow arrow.
