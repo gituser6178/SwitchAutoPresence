@@ -13,11 +13,11 @@ git pull --ff-only origin feat/phase2-auto-manual-presence
 .\.venv\Scripts\python.exe -m switchautopresence --help
 ~~~
 
-If pip has installed both `opencv-python` and `opencv-python-headless`, uninstall both from the project's .venv and reinstall **only** the pinned headless build:
+If pip has installed both `opencv-python` and `opencv-python-headless`, uninstall both from the project's .venv and reinstall **only** the pinned OpenCV 4.x build:
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip uninstall -y opencv-python opencv-python-headless
-.\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "opencv-python-headless>=4.8,<5"
+.\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "opencv-python>=4.8,<5"
 ~~~
 
 ## Video test — single owner
