@@ -128,7 +128,7 @@ See [Phase 3 testing guide](docs/PHASE3_SINGLE_CAPTURE_TESTING.md) for a complet
 
 ## Known limitations
 
-- The Tkinter video-only window renders at approximately **15 FPS**; this is a functional preview, **not yet a high-performance 60 FPS streaming renderer**. HDMI passthrough on the AVerMedia is not affected.
+- The Tkinter video-only window renders at up to **30 FPS** (rendering target, not a guaranteed frame rate); this is a functional preview, **not yet a high-performance 60 FPS streaming renderer**. HDMI passthrough on the AVerMedia is not affected.
 - Full-speed capture decode and per-frame Tkinter image drawing may use CPU. OCR is sampled infrequently rather than processed on every frame.
 - The GC553Pro hardware probe succeeded alone (426 frames / 8 sec, no read errors), and failed while another app used its video feed. The integrated preview has **not yet been hardware-tested**.
 - The capture device must be free when Automatic mode starts. Manual mode relinquishes it.
