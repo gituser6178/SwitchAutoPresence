@@ -15,6 +15,14 @@ from PIL import Image, ImageTk
 import cv2
 
 from .preview_policy import RenderTargets
+from .audio_monitor import describe_audio_devices
+from .audio_preferences import (
+    load_audio_selection,
+    preferred_audio_input,
+    preferred_audio_output,
+    save_audio_selection,
+    selection_from_devices,
+)
 
 
 def run_gui(runtime):
@@ -58,6 +66,7 @@ def run_gui(runtime):
     # A Discord window capture must remain a normal/unminimized OS window.
     # Opening it behind other apps keeps it capturable without making it topmost.
     inline_preview_active = [True]
+    original_control_geometry = [None]
 
     def enable_auto():
         try:
@@ -104,21 +113,40 @@ def run_gui(runtime):
     ttk.Button(actions, text="Clear activity", command=runtime.clear).pack(side="left")
 
     def pause_inline_preview():
-        """Release the control-panel image and skip all further video rendering."""
+        """Destroy the duplicate video widget so Tk cannot render it."""
+        nonlocal preview
+        if not inline_preview_active[0]:
+            return
         inline_preview_active[0] = False
         last_preview_sequence[0] = -1
-        preview.configure(image="", text="Control preview disabled while streaming")
-        preview.image = None
-        # Reclaim the large image area; controls and HDMI audio stay active.
-        preview.pack_forget()
+        if preview is not None:
+            preview.configure(image="")
+            preview.image = None
+            preview.destroy()
+            preview = None
+        # Remove the blank 760px preview area as well: leave a compact
+        # controller while the separate stream source is running.
+        original_control_geometry[0] = root.geometry()
+        root.minsize(740, 390)
+        root.geometry("850x455")
 
     def resume_inline_preview():
+        """Recreate a fresh widget only after the stream source closes."""
+        nonlocal preview
+        if inline_preview_active[0]:
+            return
         inline_preview_active[0] = True
         last_preview_sequence[0] = -1
-        if not preview.winfo_manager():
-            preview.pack(fill="both", expand=True, before=controls)
-        preview.configure(image="", text="Video preview: waiting for capture")
-        preview.image = None
+        preview = tk.Label(
+            body, bg="#090d16", fg="#d1d5db",
+            text="Video preview: waiting for capture", font=("Segoe UI", 12),
+        )
+        preview.configure(height=14)
+        preview.pack(fill="both", expand=True, before=controls)
+        root.minsize(740, 630)
+        if original_control_geometry[0]:
+            root.geometry(original_control_geometry[0])
+        original_control_geometry[0] = None
 
     def close_stream_window():
         w = stream_window[0]
@@ -182,8 +210,17 @@ def run_gui(runtime):
 
     audio_box = ttk.Frame(body)
     audio_box.pack(fill="x", pady=(4, 2))
-    audio_var = tk.StringVar()
-    output_var = tk.StringVar()
+    audio_devices = []
+    try:
+        audio_devices = describe_audio_devices()
+    except (RuntimeError, OSError, ValueError):
+        # The GUI and manual game selection still work without audio hardware.
+        pass
+    saved_audio = load_audio_selection()
+    suggested_input = preferred_audio_input(audio_devices, saved_audio)
+    suggested_output = preferred_audio_output(audio_devices, saved_audio)
+    audio_var = tk.StringVar(value=str(suggested_input) if suggested_input is not None else "")
+    output_var = tk.StringVar(value=str(suggested_output) if suggested_output is not None else "")
     ttk.Label(audio_box, text="AVerMedia HDMI audio input #").pack(side="left", padx=(0, 6))
     ttk.Entry(audio_box, textvariable=audio_var, width=5).pack(side="left")
     ttk.Label(audio_box, text="Windows playback output # (optional)").pack(side="left", padx=(12, 6))
@@ -196,14 +233,39 @@ def run_gui(runtime):
             runtime.disable_audio()
             return
         try:
-            input_id = int(audio_var.get().strip())
-            output_id = int(output_var.get().strip()) if output_var.get().strip() else None
+            raw_input = audio_var.get().strip()
+            if not raw_input:
+                # Recheck the currently attached card: Audio device indices can
+                # change after reconnecting a USB capture card.
+                discovered = describe_audio_devices()
+                suggested = preferred_audio_input(discovered, load_audio_selection())
+                if suggested is None:
+                    raise ValueError(
+                        "No AVerMedia HDMI recording endpoint was found. "
+                        "Run audio-devices once and choose an HDMI input."
+                    )
+                raw_input = str(suggested)
+                audio_var.set(raw_input)
+            try:
+                input_id = int(raw_input)
+                output_id = int(output_var.get().strip()) if output_var.get().strip() else None
+            except ValueError as exc:
+                raise ValueError("The audio device numbers must be integers.") from exc
+            if input_id < 0 or (output_id is not None and output_id < 0):
+                raise ValueError("The audio device numbers must be non-negative.")
             runtime.enable_audio(input_id, output_device=output_id)
-        except ValueError:
-            messagebox.showerror(
-                "Audio device", "Enter the AVerMedia HDMI input number from audio-devices; "
-                "the playback output number is optional."
-            )
+            # Successful routing is the right time to persist the selected
+            # endpoint by name and host API, not merely a fragile index.
+            try:
+                devices = describe_audio_devices()
+                preference = selection_from_devices(devices, input_id, output_id)
+                save_audio_selection(preference)
+            except (OSError, ValueError, RuntimeError):
+                # Playback is working; a preferences write failure should not
+                # interrupt sound or label its route as broken.
+                pass
+        except ValueError as exc:
+            messagebox.showerror("Audio device", str(exc))
         except RuntimeError as exc:
             messagebox.showerror("Audio monitor", str(exc))
 
@@ -212,8 +274,8 @@ def run_gui(runtime):
     ttk.Label(body, textvariable=audio_level_var, font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(
         body,
-        text="Run 'audio-devices' and 'audio-test --input N' first. Select HDMI sound, never "
-             "your microphone (feedback risk). Verify Discord shares this app's audio.",
+        text="The app remembers your AVerMedia HDMI input. Leave output blank for your "
+             "default Windows DAC. Disable Windows Listen to avoid duplicate audio.",
         wraplength=800, font=("Segoe UI", 9),
     ).pack(anchor="w", pady=(1, 8))
 
@@ -267,7 +329,7 @@ def run_gui(runtime):
                         stream_stats["start"] = monotonic()
         else:
             last_preview_sequence[0] = -1
-            if inline_preview_active[0] and preview.cget("image"):
+            if inline_preview_active[0] and preview is not None and preview.cget("image"):
                 preview.configure(image="", text="Video preview unavailable — use Automatic and choose a device")
                 preview.image = None
             if stream_label[0] is not None:
