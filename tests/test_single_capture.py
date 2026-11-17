@@ -263,11 +263,20 @@ def test_audio_monitor_rejects_negative_endpoint():
         AudioMonitor(-1)
 
 
-def test_manual_rejects_audio_monitoring(tmp_path):
+def test_manual_supports_audio_monitoring_without_video(tmp_path):
     app = make_runtime(tmp_path, device=1)
     app.select_manual("Pokémon Violet")
-    with pytest.raises(ValueError):
-        app.enable_audio(5)
+    class FakeAudio:
+        def __init__(self, input_device):
+            self.input_device = input_device
+            self.running = False
+        def start(self): self.running = True
+        def stop(self): self.running = False
+        def set_muted(self, value): pass
+        def levels(self): return {}
+    app.enable_audio(14, monitor_factory=FakeAudio)
+    assert app.status()["audio_enabled"]
+    app.disable_audio()
 
 
 def test_new_cli_commands():
@@ -419,3 +428,46 @@ def test_audio_test_classifies_true_silence():
     result = probe_audio_input(9, seconds=1, backend=ZeroProbeBackend(), wait=lambda _: None)
     assert result["status"] == "silent"
     assert not result["has_peaks"]
+
+
+def test_direct_video_gives_card_to_discord_without_killing_local_audio(tmp_path):
+    StubReader.created.clear()
+    app = make_runtime(tmp_path, device=1)
+    class FakeAudio:
+        def __init__(self, input_device):
+            self.input_device = input_device
+            self.running = False
+        def start(self): self.running = True
+        def stop(self): self.running = False
+        def set_muted(self, value): pass
+        def levels(self): return {}
+    app.enable_audio(14, monitor_factory=FakeAudio)
+    app.start()
+    deadline = monotonic() + 2
+    while not StubReader.created and monotonic() < deadline:
+        sleep(.02)
+    assert StubReader.created
+    app.select_direct()
+    deadline = monotonic() + 2
+    while not StubReader.created[0].stopped and monotonic() < deadline:
+        sleep(.02)
+    assert StubReader.created[0].stopped
+    assert app.status()["discord_owns_video"]
+    assert app.preview_frame() is None
+    assert app.status()["audio_enabled"]
+    assert app.session.snapshot().activity.details == "Streaming Nintendo Switch"
+    app.select_manual("The Legend of Zelda: Ocarina of Time")
+    assert app.status()["audio_enabled"]
+    app.stop()
+
+
+def test_discord_direct_mode_does_not_open_video_on_restart(tmp_path):
+    StubReader.created.clear()
+    app = make_runtime(tmp_path, device=1)
+    app.select_direct()
+    app.start()
+    sleep(.3)
+    assert StubReader.created == []
+    app.stop()
+    again = make_runtime(tmp_path, device=1)
+    assert again.status()["mode"] == Mode.DIRECT.value
