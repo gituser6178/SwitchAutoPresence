@@ -114,7 +114,8 @@ def preferred_audio_input(
         if resolved is not None:
             # Never auto-select an endpoint explicitly labeled "Not To Use".
             item = next(d for d in items if d.index == resolved)
-            if "not to use" not in item.name.casefold():
+            # Automatic startup must never silently open a microphone.
+            if _is_avermedia_hdmi(item):
                 return resolved
 
     choices = [d for d in items if _is_avermedia_hdmi(d)]
