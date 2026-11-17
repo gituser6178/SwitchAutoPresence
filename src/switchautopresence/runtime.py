@@ -64,6 +64,7 @@ class Runtime:
         self._last_home_ocr = None  # last HOME OCR result retained for diagnosis
         self._home_streak = 0
         self._audio: AudioMonitor | None = None
+        self._audio_muted = False
         self.error: str | None = None
         mode, manual = load_mode(settings_file)
         if mode == Mode.MANUAL and manual:
@@ -145,7 +146,14 @@ class Runtime:
             self.error = f"Audio monitoring could not start: {exc}"
             raise RuntimeError(self.error) from exc
         self._audio = audio
+        if self._audio_muted and hasattr(audio, "set_muted"):
+            audio.set_muted(True)
         self.error = None
+
+    def set_audio_muted(self, muted: bool) -> None:
+        self._audio_muted = bool(muted)
+        if self._audio is not None:
+            self._audio.set_muted(self._audio_muted)
 
     def disable_audio(self) -> None:
         if self._audio is not None:
@@ -290,6 +298,7 @@ class Runtime:
             "using_defaults": bool(reader and reader.using_defaults),
             "frame_age": round(self.clock() - self._last_frame_at, 1) if self._last_frame_at else None,
             "audio_enabled": bool(self._audio and self._audio.running),
+            "audio_muted": self._audio_muted,
             "audio_input": self._audio.input_device if self._audio else None,
             "audio_output": self._audio.output_device if self._audio else None,
             "audio_levels": self._audio.levels() if self._audio and self._audio.running else None,
