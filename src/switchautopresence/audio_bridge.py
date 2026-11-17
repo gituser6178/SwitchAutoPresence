@@ -93,10 +93,12 @@ class AudioBridge:
         count = len(converted)
         if count == 0:
             return
-        if count > self.capacity:
+        trimmed = max(0, count - self.capacity)
+        if trimmed:
             converted = converted[-self.capacity:]
             count = len(converted)
         with self._lock:
+            self.dropped_frames += trimmed
             excess = max(0, self._size + count - self.capacity)
             if excess:
                 self._read_pos = (self._read_pos + excess) % self.capacity
