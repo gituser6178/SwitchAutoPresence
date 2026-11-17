@@ -230,11 +230,15 @@ def run_gui(runtime):
         audio_button.configure(text="Stop audio monitor" if s["audio_enabled"] else "Start audio monitor")
         levels = s.get("audio_levels")
         if levels is not None:
+            route = levels.get("route_mode", "unknown")
+            conversion = f"{levels.get('input_rate', '?')}→{levels.get('output_rate', '?')} Hz"
+            buffer = f", buffer {levels['buffer_ms']:.0f} ms" if "buffer_ms" in levels else ""
             audio_level_var.set(
-                f"HDMI audio input {s['audio_input']}: "
+                f"HDMI #{s['audio_input']} → Output #{levels.get('output_endpoint', '?')} "
+                f"({route}, {conversion}{buffer}): "
                 f"RMS {levels['latest_rms_dbfs']:.1f} dBFS, "
                 f"peak {levels['latest_peak_dbfs']:.1f} dBFS "
-                f"({'signal detected' if levels['has_signal'] else ('weak/intermittent peaks' if levels.get('has_peaks') else 'nearly silent')})"
+                f"({'signal' if levels['has_signal'] else ('weak peaks' if levels.get('has_peaks') else 'nearly silent')})"
             )
         else:
             audio_level_var.set("Audio: monitor OFF; run audio-test to check HDMI input")
