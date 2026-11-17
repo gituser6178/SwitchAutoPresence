@@ -36,12 +36,26 @@ SwitchAutoPresence
 
 1. Stop Discord **directly capturing the AVerMedia** (it would compete for the card).
 2. Start SwitchAutoPresence with the correct video device index, e.g. **1** on the original test PC.
-3. Click **Open stream window**. This is a standalone video-only window.
-4. In Discord's **Share Your Screen → Applications**, share **SwitchAutoPresence Stream**, not the AVerMedia video device.
+3. Click **Start stream source**. The controller **stops drawing its duplicate preview** and releases its image buffer; the stream window is started **behind other windows**, instead of popping in front of your desktop.
+4. In Discord's **Share Your Screen → Applications**, select **SwitchAutoPresence Stream**, not the AVerMedia video device. If it doesn't appear, press **Show stream for Discord picker** to bring it forward temporarily. After selection, cover it with other windows as usual.
 5. The same in-memory video frames are periodically analyzed for the Switch HOME menu; game selection on HOME is only a **candidate**, not confirmed gameplay.
 6. HOME shows **Nintendo Switch — Browsing HOME** with generic artwork; likely gameplay shows the previously selected title after several consistent non-HOME frames.
 
 The initial HOME detector uses image-layout heuristics and offline RapidOCR. **It's experimental.** Gameplay launch can be misclassified if the HOME screen is obscured or you open another app. A fresh launch transition is required; starting in the middle of a game displays a generic Switch activity until a title can be confirmed.
+
+
+### Background Discord streaming (control preview disabled)
+
+Once **Start stream source** has been clicked:
+
+- The **main control-panel preview is completely disabled**; no second video resizing, conversion or image allocation occurs until the stream window is closed.
+- The independent **SwitchAutoPresence Stream** window remains mapped and keeps accepting the latest capture frames even if other normal windows cover it. It is lowered to the background when created rather than forced to the foreground.
+- It **does not need to stay on top** to be streamable through Windows Graphics Capture, where supported. Select the **Application** window inside Discord, not the entire desktop.
+- **Do not minimize or hide** the source window. A truly invisible/minimized HWND may disappear from Discord's application picker or stop updating. This release deliberately does **not** use `withdraw`, `iconify`, transparency, or other tricks that would risk freezing the feed.
+- Use **Show stream for Discord picker** if it isn't selectable initially. You can then cover it again with other windows; the background rendering continues. Close the stream window to restore the control-panel preview.
+- Discord and Windows have multiple window-capture methods; the user must verify actual occluded-window streaming on their own system. A future completely **headless** source would require a separate virtual capture or display backend, not a normally hidden app window.
+
+**Sound:** The existing in-process HDMI audio relay continues independently of either preview; opening or closing the stream window doesn't enable/disable the audio monitor.
 
 ### Manual mode
 
