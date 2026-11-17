@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+build/
+dist/
+*.log
+# Do not commit captures or personal settings
+captures/
+frames/
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.mp4
+*.mov
+*.mkv
+*.jsonl
+.env
+config.local.*

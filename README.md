@@ -1,126 +1,107 @@
 # SwitchAutoPresence 🎮
 
-**Automatically detect Nintendo Switch and Nintendo Switch 2 games from a capture card and show what you're playing on Discord.**
+**Automatically detect Nintendo Switch and Nintendo Switch 2 games through a capture feed and display them in Discord Rich Presence — with manual game selection when you want it.**
 
-SwitchAutoPresence is a planned free, open-source Windows utility that uses an HDMI capture feed to recognize the game you're playing and update **Discord Rich Presence**—without Nintendo account credentials, console mods, or sending gameplay to a cloud recognition service.
+> **Status: pre-alpha.** This repository currently has a **Phase 1 capture diagnostic**. Game recognition, window capture, manual selection, and Discord integration are **planned, not implemented**.
 
-> [!IMPORTANT]
-> **Status: early development / planning.** This repository does not yet contain a working application. Automatic game detection, Discord integration, and capture-card compatibility still need to be implemented and tested.
+SwitchAutoPresence is an unofficial, free, locally running Windows project. No Nintendo account login or console modifications are planned.
 
-## The idea
+## Planned modes: automatic + manual
 
-**Nintendo Switch / Switch 2 → HDMI capture card → local game detection → Discord Rich Presence**
-
-1. Read occasional frames from an already-connected capture card.
-2. Detect the Switch HOME menu, then identify a game using its title and/or icon.
-3. Confirm a game launch rather than assuming that a highlighted HOME tile is running.
-4. Remember the active title during gameplay and update Discord Rich Presence.
-5. Clear or pause presence when the console is asleep, the signal disappears, or confidence is too low.
-
-The initial approach focuses on recognizing HOME-menu game artwork and text. **Arbitrary gameplay identification is not part of the first milestone**: recognizing games from gameplay alone is harder and less reliable.
-
-## Planned features
-
-- [ ] Capture-device discovery and selection on Windows
-- [ ] Lightweight background frame sampling (without requiring a permanent preview window)
-- [ ] Switch HOME-screen detection
-- [ ] Local game-title recognition using OCR and/or image matching
-- [ ] Game-launch confirmation, persistence, and false-positive protection
-- [ ] Discord Rich Presence with game title, artwork when available, and session timer
-- [ ] Manual game selection/override for unrecognized titles
-- [ ] Signal-loss and sleep handling
-- [ ] System-tray UI, startup options, and basic diagnostics
-- [ ] Local recognition database that can be updated and contributed to
-
-## Initial test hardware
-
-| Component | Planned test setup |
+| Mode | Expected behavior |
 | --- | --- |
-| Console | Nintendo Switch 2 |
-| Capture card | AVerMedia Live Gamer ULTRA S (GC553Pro) |
-| Operating system | Windows |
-| Output | Discord desktop application / Rich Presence |
-| Other software | Discord streaming and VideoGameCapture |
+| **Automatic** (default) | Sample frames from the existing video viewer, recognize the Switch HOME screen, confirm the running title, and update Discord. |
+| **Manual** | Search/select a Nintendo Switch or Switch 2 title and show that title on Discord, even if there is no capture feed. Manual mode **locks the selected title** until the user returns to Automatic mode or clears activity. |
+| **Clear activity** | Remove the app's Discord activity until the user explicitly selects a game or resumes Automatic mode. |
 
-**Hardware support is not yet verified.** A major early test is whether the capture card can be read while Discord or VideoGameCapture also accesses it. Some devices and drivers permit only one active capture consumer. The app must detect contention and explain it; it must not silently interrupt an existing stream.
+**Priority:** Manual selection always wins over automatic recognition. Detection must never silently overwrite a manual game. Switching back to Automatic releases that override; if recognition is uncertain, show an unknown/unset state instead of claiming the wrong game. A future tray UI should clearly show the current mode, game, and detection confidence.
 
-## Proposed architecture
+This makes the app useful for people **without a capture card** too: they can use manual mode as a basic Switch Discord presence application.
 
-This is a starting design, **not an implemented API or final technology choice**.
+## Capture architecture
 
-```text
-Capture device
-    |
-    v
-Frame sampler (low-frequency)
-    |
-    v
-HOME-menu detector
-    |
-    +--> Game title / icon matcher
-    |         |
-    |         v
-    |    Confidence + launch confirmation
-    |         |
-    v         v
-Session state machine (unknown / HOME / playing / signal lost)
-    |
-    v
-Discord Rich Presence client
-```
+**Nintendo Switch / Switch 2 → AVerMedia capture card → VideoGameCapture viewer → local window-frame sampling → game recognition → Discord Rich Presence**
 
-Possible tools: **Python**, **OpenCV**, an offline OCR engine, and a Discord Rich Presence client. Packaging into a standalone Windows application comes after the proof of concept.
+We should **not open the capture card a second time** while VideoGameCapture/Discord uses it. A real Windows test with the AVerMedia Live Gamer ULTRA S (GC553Pro) returned `Status: unavailable` when another viewer was active; exclusive capture access is the leading explanation, though exact driver behavior still needs validation.
+
+In that same setup, **only Discord's small self-preview pauses to save resources; the VideoGameCapture window itself continues rendering**. Therefore, the next experiment is sampling occasional frames from the **VideoGameCapture window**, rather than opening the hardware again.
+
+Window capture must be tested for occluded, minimized, or off-screen windows. If the viewer stops rendering when minimized, we should provide a supported fallback (for example, a shared video pipeline) rather than claiming invisible capture always works.
 
 ### Detection rules
 
-- Do not change games simply because a different HOME-menu tile is selected.
-- Require several consistent observations or a recognized launch transition before updating presence.
-- Keep the last confirmed game during gameplay when the HOME menu is no longer visible.
-- Offer manual override and a clear **Unknown game** state.
-- Handle capture devices that are busy, unplugged, asleep, or returning blank frames.
-- Avoid excessive polling and unnecessary CPU/GPU usage.
+- A game being **highlighted** on HOME does not prove it has launched.
+- Confirm launch/transitions before changing activity.
+- Require consistent observations, avoid oscillating statuses, and preserve the last confirmed title when gameplay replaces HOME.
+- Never infer a game solely from a stale or frozen frame.
+- Do not collect or upload gameplay frames or personal footage to a remote service.
+- Unknown titles can be selected manually, with a local game catalog and room for custom entries.
+
+
+
+### HOME screen recognition and Discord activity
+
+The Switch HOME menu displays the **highlighted game's full title above its tile** (for example, `The Legend of Zelda: Ocarina of Time`). Automatic detection should start by cropping that title area from frames captured from the **VideoGameCapture window** and reading it with offline OCR, optionally verifying a title against the tile artwork.
+
+**Do not mistake the highlighted tile for the game currently running.** Store it as a *candidate* until a launch transition is confirmed. If the console is on HOME, Discord should **still show Nintendo Switch as the activity**, with a generic Switch image and details like `Browsing HOME`. Never display `Playing <title>` merely because its tile is selected.
+
+### Discord artwork
+
+Use the Discord application identity **Nintendo Switch** for both modes. Its Rich Presence **large image** should change with the confirmed game, with an optional **small Nintendo Switch icon** overlay. In manual mode use the manually selected game's art, regardless of what the video recognizer sees.
+
+| Observation | Discord activity name | Details | Large image |
+| --- | --- | --- | --- |
+| HOME menu visible | Nintendo Switch | Browsing HOME | Generic Switch artwork |
+| Game launch confirmed | Nintendo Switch | Playing [confirmed title] | Game cover/icon |
+| Unknown active game | Nintendo Switch | Game not recognized | Generic Switch artwork |
+| Manual game chosen | Nintendo Switch | Playing [selected title] | Selected game's cover/icon |
+| Console off / signal lost in AUTO | Clear after a reasonable grace period | — | — |
+
+The image source should come from a **licensed/approved asset catalog**, or a valid publicly accessible URL when permitted; use the generic Switch image if a game has no safe art source. Do not dump copyrighted game cover artwork into the public GitHub repository without permission. Discord supports uploaded Rich Presence art assets and publicly accessible external URLs, subject to the specific RPC/SDK integration and valid image requirements. Images should not require uploading captured gameplay.
+
+## Phase 1: Capture diagnostics
+
+Requires Windows 10/11 and Python 3.10+.
+
+~~~powershell
+git clone https://github.com/gituser6178/SwitchAutoPresence.git
+cd SwitchAutoPresence
+git switch feat/phase1-capture-diagnostics
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[windows]"
+.\.venv\Scripts\python.exe -m switchautopresence devices
+.\.venv\Scripts\python.exe -m switchautopresence probe --device 1 --seconds 8
+~~~
+
+**Replace 1 with your own device index.** The diagnostic does not save images, video, or audio; it reports aggregate frame statistics only. It does not connect to Discord.
+
+See the **[Phase 1 testing guide](docs/PHASE1_TESTING.md)** for the reproducible test procedure.
+
+### Hardware findings (one initial Windows setup)
+
+- Nintendo Switch 2 and **AVerMedia Live Gamer ULTRA S (GC553Pro)** detected as capture device index 1.
+- DirectShow probe when used alone: **426 frames in 8.01 seconds, no read errors, 640×480 negotiated resolution, ~53.2 observed FPS**.
+- The same probe while the existing streaming/capture application was active returned **unavailable**.
+- Discord's *self-preview* pauses for resource savings; the independent **VideoGameCapture window is still live**.
+
+These are **observations from one system**, not broad hardware guarantees. The detected resolution is not necessarily the console's output resolution.
 
 ## Roadmap
 
-### Phase 1 — Capture proof of concept
-- [ ] Enumerate Windows capture devices and open a selectable feed
-- [ ] Confirm frames from the GC553Pro
-- [ ] Measure CPU usage and detection latency
-- [ ] Test concurrent access with Discord streaming and VideoGameCapture
+- [x] Phase 1 diagnostic CLI, device enumeration and automated unit tests
+- [x] Confirm initial GC553Pro direct-capture success and failure alongside the existing viewer
+- [ ] Phase 1B: read frames from the VideoGameCapture **window** without opening the capture device
+- [ ] Test minimized/occluded windows, Discord streaming, viewer compatibility and CPU usage
+- [ ] Phase 2: OCR the HOME title strip, retain selected candidate, confirm actual launch and keep a generic Nintendo Switch activity while browsing HOME
+- [ ] Phase 3: Discord Rich Presence with per-game large artwork, small Nintendo Switch icon, fallback art, and **manual/automatic mode selection with explicit override behavior**
+- [ ] Phase 4: Windows tray app, settings, packaging and optional community title catalog
 
-### Phase 2 — Game recognition
-- [ ] Collect *locally generated* test frames from the Switch HOME menu
-- [ ] Detect HOME-menu state and identify a small test set of game titles
-- [ ] Validate game-launch transitions and avoid false positives
-- [ ] Add an offline/manual fallback
+## Privacy
 
-### Phase 3 — Discord integration
-- [ ] Register a Discord developer application and configure presence assets
-- [ ] Show game name and session start time
-- [ ] Switch titles cleanly and clear activity after signal loss
+Recognition should run locally. This Phase 1 tool does not transmit or save captured gameplay. Do not commit game footage, screenshots, Nintendo credentials, or Discord user tokens.
 
-### Phase 4 — Windows app
-- [ ] Add system-tray settings and diagnostics
-- [ ] Package a Windows release
-- [ ] Document supported cards, limitations, and troubleshooting
-- [ ] Test additional capture hardware with community help
+## License
 
-## Privacy and security
+Code is released under the [MIT License](LICENSE). Nintendo game art, third-party assets and metadata have their own licensing requirements; MIT does not grant rights to those.
 
-- Game recognition should run **locally** by default.
-- Do **not** commit gameplay screenshots, personal footage, Nintendo account data, private Discord identifiers, or secrets.
-- Do not transmit capture frames to remote services.
-- Keep user-specific settings and logs out of version control.
-- Discord integration should use the local Rich Presence mechanism and a public application ID—not a user account token.
-
-## Contributing
-
-Contributions, testing reports, and game-recognition ideas will be welcome as the project develops. In particular, reports about different capture cards and simultaneous streaming are valuable.
-
-Before opening a feature PR, describe the problem and proposed behavior in an issue. Please avoid submitting copyrighted game screenshots or artwork without permission.
-
-## License and attribution
-
-An **MIT license is planned**; a LICENSE file will be added before the first code release. Any game metadata, assets, or third-party libraries will need separate licensing and attribution review.
-
-SwitchAutoPresence is an **unofficial community project** and is not affiliated with, endorsed by, or sponsored by Nintendo, Discord, or AVerMedia.
+SwitchAutoPresence is **not affiliated with or endorsed by Nintendo, Discord, or AVerMedia**.
