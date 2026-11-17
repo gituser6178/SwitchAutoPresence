@@ -171,7 +171,7 @@ def test_discord_sends_name_image_timestamp_and_dedupes():
     payload = rpc.calls[-1][1]
     assert payload["name"] == "Nintendo Switch"
     assert payload["large_image"].endswith("violet.png")
-    assert payload["start"] == 555000
+    assert payload["start"] == 555
     assert publisher.sync(game)
     assert len([call for call in rpc.calls if call[0] == "update"]) == 1
     now[0] = 150

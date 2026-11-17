@@ -1,3 +1,3 @@
-"""SwitchAutoPresence: local capture recognition and Discord presence."""
+"""SwitchAutoPresence: one capture-card owner, offline recognition and Discord."""
 
-__version__ = "0.2.0a1"
+__version__ = "0.3.0a1"

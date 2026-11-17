@@ -1,6 +1,8 @@
-"""Runtime: viewer-window frames -> offline OCR -> state -> Discord.
+"""Run the single-owner capture feed, GUI preview, OCR and Discord presence.
 
-No direct capture-card handle is opened by automatic recognition.
+Capture ownership lives inside DeviceStream. The GUI and recognizer only
+borrow its latest in-memory frame; neither opens a second AVerMedia handle.
+Manual mode releases the card so users may stream it directly from Discord.
 """
 
 from __future__ import annotations
@@ -9,22 +11,30 @@ import logging
 from threading import Event, RLock, Thread
 from time import monotonic
 
-from .artwork import ArtworkCatalog
+from .artwork import ArtworkCatalog, _validate_asset
+from .audio_monitor import AudioMonitor
 from .catalog import GameCatalog
+from .device_stream import DeviceStream, VideoOptions
 from .discord_presence import DiscordPublisher
 from .recognition import FrameKind, HomeRecognizer
 from .settings import load_mode, save_mode, load_artwork, save_artwork
 from .state import Mode, Session
-from .window_capture import WindowCapture
 
 LOG = logging.getLogger(__name__)
 
 
 class Runtime:
+    """Screen-independent state plus one owned video source.
+
+    The main UI remains responsive if a driver takes time to open a device.
+    Video is never recorded, uploaded or copied into an extra capture handle.
+    """
+
     def __init__(
-        self, *, app_id: str | None = None, window: str = "VideoGameCapture", hwnd: int | None = None,
-        roi=(.08, .19, .84, .19), catalog=None, artwork=None,
-        reader_factory=WindowCapture, ocr_engine=None, settings_file=None, artwork_file=None,
+        self, *, app_id: str | None = None, device: int | None = None,
+        backend: str = "dshow", width: int = 1920, height: int = 1080,
+        fps: int = 60, roi=(.08, .19, .84, .19), catalog=None, artwork=None,
+        reader_factory=DeviceStream, ocr_engine=None, settings_file=None, artwork_file=None,
         publisher=None, clock=monotonic,
     ):
         self.session = Session()
@@ -39,16 +49,19 @@ class Runtime:
         self.publisher = publisher or DiscordPublisher(app_id, self.artwork)
         self.reader_factory = reader_factory
         self.recognizer = HomeRecognizer(self.catalog, roi=roi, engine=ocr_engine)
-        self.window = window
-        self.hwnd = hwnd
         self.settings_file = settings_file
         self.clock = clock
-        self._reader = None
+        self._config_lock = RLock()
+        self._options = VideoOptions(device, backend, width, height, fps) if device is not None else None
+        self._active_options = None
+        self._reader: DeviceStream | None = None
         self._stop = Event()
-        self._worker = None
-        self._lock = RLock()
+        self._worker: Thread | None = None
         self._dark_count = 0
-        self._last_frame_at = None
+        self._last_frame_at: float | None = None
+        self._last_sequence = 0
+        self._next_recognition = 0.0
+        self._audio: AudioMonitor | None = None
         self.error: str | None = None
         mode, manual = load_mode(settings_file)
         if mode == Mode.MANUAL and manual:
@@ -66,14 +79,21 @@ class Runtime:
     def stop(self) -> None:
         self._stop.set()
         if self._worker:
-            self._worker.join(timeout=4)
+            self._worker.join(timeout=5)
+        self.disable_audio()
         self._stop_capture()
         self.publisher.close()
 
+    def configure_video(
+        self, device: int, *, backend: str = "dshow",
+        width: int = 1920, height: int = 1080, fps: int = 60,
+    ) -> None:
+        options = VideoOptions(device, backend, width, height, fps)
+        with self._config_lock:
+            self._options = options
+
     def select_manual(self, title: str, image: str | None = None) -> None:
-        # Validate image before changing activity state.
         if image is not None:
-            from .artwork import _validate_asset
             _validate_asset(image)
         self.session.set_manual(title)
         if image is not None:
@@ -81,7 +101,7 @@ class Runtime:
             try:
                 save_artwork(self.artwork.games, self.artwork_file)
             except OSError as exc:
-                self.error = f"Could not save game artwork: {exc}"
+                self.error = f"Could not save artwork: {exc}"
         self._persist()
 
     def select_auto(self) -> None:
@@ -93,33 +113,59 @@ class Runtime:
         self.session.clear()
         self._persist()
 
-    def _persist(self):
+    def _persist(self) -> None:
         snap = self.session.snapshot()
         try:
             save_mode(snap.mode, snap.manual_title, self.settings_file)
         except OSError as exc:
             self.error = f"Could not save preferences: {exc}"
 
-    def _stop_capture(self):
-        if self._reader is not None:
-            try:
-                self._reader.stop()
-            except Exception as exc:
-                LOG.debug("Could not stop window capture: %s", exc)
-            self._reader = None
-
-    def _start_capture(self):
+    def enable_audio(self, input_device: int, *, monitor_factory=AudioMonitor) -> None:
+        if self.session.snapshot().mode != Mode.AUTO:
+            raise ValueError("Enable automatic mode before audio monitoring")
+        if self._audio:
+            self.disable_audio()
+        audio = monitor_factory(input_device)
         try:
-            reader = self.reader_factory(self.window, interval_seconds=2.0, hwnd=self.hwnd)
+            audio.start()
+        except Exception as exc:
+            self.error = f"Audio monitoring could not start: {exc}"
+            raise RuntimeError(self.error) from exc
+        self._audio = audio
+
+    def disable_audio(self) -> None:
+        if self._audio is not None:
+            audio, self._audio = self._audio, None
+            try:
+                audio.stop()
+            except Exception as exc:
+                self.error = f"Audio stop problem: {exc}"
+
+    def _stop_capture(self) -> None:
+        with self._config_lock:
+            reader, self._reader = self._reader, None
+            self._active_options = None
+        if reader is not None:
+            try:
+                reader.stop()
+            except Exception as exc:
+                self.error = f"Capture could not stop: {exc}"
+
+    def _start_capture(self, options: VideoOptions) -> None:
+        try:
+            reader = self.reader_factory(options)
             reader.start()
-            self._reader = reader
+            with self._config_lock:
+                self._reader = reader
+                self._active_options = options
             self._last_frame_at = None
+            self._last_sequence = 0
+            self._next_recognition = 0.0
             self.error = None
         except Exception as exc:
-            self._reader = None
-            self.error = str(exc)
+            self.error = f"Capture startup failed: {exc}"
 
-    def _observe(self, frame):
+    def _observe(self, frame) -> None:
         result = self.recognizer.analyze(frame)
         if result.kind == FrameKind.HOME:
             self._dark_count = 0
@@ -132,39 +178,75 @@ class Runtime:
             self._dark_count = 0
             self.session.non_home()
 
-    def _loop(self):
+    def _loop(self) -> None:
         next_capture_retry = 0.0
         while not self._stop.is_set():
+            now = self.clock()
             mode = self.session.snapshot().mode
-            if mode != Mode.AUTO:
-                self._stop_capture()
-            elif self._reader is None and self.clock() >= next_capture_retry:
-                self._start_capture()
-                next_capture_retry = self.clock() + 15
-            if mode == Mode.AUTO and self._reader is not None:
-                if self._reader.closed:
-                    self.session.no_signal()
-                    self.error = self._reader.error or "Viewer was closed"
+            with self._config_lock:
+                desired = self._options
+                reader = self._reader
+                active = self._active_options
+
+            if mode != Mode.AUTO or desired is None:
+                if reader is not None:
                     self._stop_capture()
-                    next_capture_retry = self.clock() + 5
-                else:
-                    item = self._reader.poll(timeout=0)
-                    if item:
-                        self._last_frame_at = item[0]
-                        try:
-                            self._observe(item[1])
-                            self.error = None
-                        except Exception as exc:
-                            self.error = f"Recognition error: {exc}"
-                            LOG.debug(self.error)
+                if self._audio is not None:
+                    self.disable_audio()
+                if mode == Mode.AUTO and desired is None:
+                    self.error = "Select a capture device index, or use Manual mode"
+            else:
+                if reader is not None and active != desired:
+                    self._stop_capture()
+                    reader = None
+                    next_capture_retry = 0.0
+
+                if reader is None and now >= next_capture_retry:
+                    self._start_capture(desired)
+                    next_capture_retry = now + 8.0
+                    with self._config_lock:
+                        reader = self._reader
+
+                if reader is not None:
+                    if reader.closed:
+                        self.session.no_signal()
+                        self.error = reader.error or "Video capture stopped"
+                        self.disable_audio()
+                        self._stop_capture()
+                        next_capture_retry = now + 8.0
+                    else:
+                        packet = reader.latest()
+                        if packet is not None and packet.sequence != self._last_sequence:
+                            self._last_sequence = packet.sequence
+                            self._last_frame_at = packet.timestamp
+                            if now >= self._next_recognition:
+                                self._next_recognition = now + 2.0
+                                try:
+                                    self._observe(packet.bgr)
+                                    self.error = None
+                                except Exception as exc:
+                                    self.error = f"Recognition error: {exc}"
+                                    LOG.debug(self.error)
             try:
                 self.publisher.sync(self.session.snapshot().activity)
             except Exception as exc:
-                self.error = f"Discord error: {exc}"
+                self.error = f"Discord update error: {exc}"
+
             self._stop.wait(.25)
+
+    def preview_frame(self):
+        """Latest same-owner camera frame, or None when not capturing."""
+        if self.session.snapshot().mode != Mode.AUTO:
+            return None
+        with self._config_lock:
+            reader = self._reader
+        return reader.latest() if reader is not None and not reader.closed else None
 
     def status(self) -> dict:
         snap = self.session.snapshot()
+        with self._config_lock:
+            reader = self._reader
+            options = self._options
         return {
             "mode": snap.mode.value,
             "screen": snap.screen.value,
@@ -173,6 +255,12 @@ class Runtime:
             "manual": snap.manual_title,
             "details": snap.activity.details if snap.activity else "No activity",
             "artwork": self.artwork.resolve(snap.activity.game if snap.activity else None).large_image,
+            "device": options.device if options else None,
+            "capture_open": bool(reader and reader.opened),
+            "capture_resolution": f"{reader.width}x{reader.height}" if reader and reader.width else None,
+            "capture_fps": reader.observed_fps if reader else None,
+            "using_defaults": bool(reader and reader.using_defaults),
             "frame_age": round(self.clock() - self._last_frame_at, 1) if self._last_frame_at else None,
-            "error": self.error or self.publisher.error,
+            "audio_enabled": bool(self._audio and self._audio.running),
+            "error": self.error or (reader.error if reader else None) or self.publisher.error,
         }
