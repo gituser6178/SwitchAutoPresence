@@ -79,3 +79,15 @@ Provide only text:
 - Whether **you** hear the monitored audio and whether **someone in Discord** hears it.
 
 **Do not share microphone recordings, device credentials, or personal conversations.**
+
+## Nintendo Switch 2 stereo setting and weak-signal readings
+
+If the AVerMedia input opens and reports many audio blocks but the overall RMS is very low (for example, -63.6 dBFS) while peaks are higher (for example, -30.4 dBFS), it is **not absolute digital silence**. The updated probe reports `weak_signal` for noticeable isolated peaks. These could be intermittent game audio or background noise; the level meter alone cannot identify their source.
+
+On the Switch 2, select **System Settings → Audio → TV Sound → Stereo**, then try **Test Output** while measuring the AVerMedia HDMI input again. AVerMedia specifically warns that the GC553Pro cannot accept the Switch 2's 5.1 LPCM format; stereo is the recommended capture format. Make sure sound isn't redirected to wired or Bluetooth headphones.
+
+Official references:
+- Nintendo Switch 2 audio menu: https://en-americas-support.nintendo.com/app/answers/detail/a_id/68202
+- AVerMedia HDMI audio troubleshooting: https://www.avermedia.com/in/support/faq/why-cant-i-hear-the-game-audio-on-recentral-4-and-recording-video-clip-oJ2Go2vZ-pdbwqKzM
+
+If Stereo + Test Output still yields very low readings, test the same HDMI source using the alternative **HDMI (GC553Pro)** recording device exposed through DirectSound (index 9 on the initial test PC) or WDM-KS (index 28). **Device indices are system-specific**; check `audio-devices` each time. The 48 kHz probe may be unavailable on some 44.1 kHz endpoints. Avoid the entries labeled `Not To Use` and do not capture a microphone.
