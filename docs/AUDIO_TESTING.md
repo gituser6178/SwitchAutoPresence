@@ -120,3 +120,15 @@ Input and output streams are decoupled with ~70 ms target buffer and a 400 ms ma
 SwitchAutoPresence now automatically chooses a verified **AVerMedia HDMI** input when Automatic mode starts, without requiring audio-devices, audio-test or a Start Audio button. It remembers your successful input by name/host API across app launches, so it can survive changed Windows device indices. **Not To Use** and microphone inputs are never automatically selected. Audio continues through your Windows default output unless manually overridden.
 
 The **Recording input** and **Playback output** dropdowns let you manually choose another device (immediately restarting the route), and **Rescan** enumerates freshly connected USB endpoints. **Mute** silences local/Discord playback but preserves input capture, metering, and the selected endpoint; **Unmute** restores sound. Mute does not affect your systemwide sound settings or Windows Listen checkbox. In Manual game mode the app still releases capture to Discord by design.
+
+## Discord Direct: video from Discord, local audio from SwitchAutoPresence
+
+The app now has a **Discord direct** mode that never opens the AVerMedia's video handle, keeping native video capture in Discord at full speed. HDMI audio from the capture card is independently monitored by SwitchAutoPresence through the preferred Windows recording endpoint and sent to the default TOPPING DAC. The Discord audience already receives game sound through the card's own audio path. Windows **Listen to this device** should remain off.
+
+- Launch the app and choose **Discord direct** first; wait briefly while the video handle is released.
+- Then configure Discord to capture the AVerMedia GC553Pro directly. If video capture reports the device busy, verify the application is in **DIRECT** or **MANUAL** mode (not AUTO).
+- **Local headphones:** the in-app HDMI audio monitor connects automatically regardless of Direct or Manual mode. It uses the default Windows output, and the **Mute** button silences its playback.
+- **Manual Rich Presence:** choose a game title in SwitchAutoPresence without stopping local audio or claiming the capture-card video.
+- **Minimize to tray:** hides the control panel while audio and presence keep running; use the tray menu to restore/exit.
+- Verify simultaneous sound while Discord owns video on your specific driver. Audio devices can have exclusive access restrictions; do not promise this combination until hardware confirms it.
+
