@@ -222,3 +222,9 @@ On Windows the app now discovers the capture-card HDMI audio endpoint itself, pr
 There is no Start Audio Monitor button. You can change the **Recording input** or **Playback output** dropdown and the route restarts automatically; **Rescan** refreshes connected device choices. The **Mute** button silences local output and Discord's application audio without closing the HDMI stream; **Unmute** restores it. Manual game mode deliberately releases the capture card for direct Discord capture, so the app's automatic audio route is used in Automatic mode.
 
 The duplicate control-panel preview widget is **destroyed** while the stream source is open. Closing that stream window recreates the control-panel preview. The source window remains mapped/unminimized behind other applications so Discord may capture it; a truly invisible capture source requires another backend.
+
+### Stream-window frame pacing update
+
+A GC553Pro hardware screenshot showed **59.8 FPS capture** but only **37.9 FPS stream rendering**. The renderer used to wait 16ms *after* each Tkinter image resize and copy, wasting most of its 60fps frame budget. The GUI now schedules against the frame's **start time**, uses efficient linear downscaling and reuses a Tk image object when window dimensions are unchanged.
+
+The controller now displays actual **capture FPS**, **stream-window FPS**, and **average image-render duration in ms**. Continue testing while Discord shares the unminimized stream source. A 60fps target is not a performance guarantee; if 1080p/720p still fails, a GPU-backed renderer is a stronger next step than arbitrarily requesting a higher capture rate.

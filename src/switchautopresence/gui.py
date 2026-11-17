@@ -14,7 +14,7 @@ from time import monotonic
 from PIL import Image, ImageTk
 import cv2
 
-from .preview_policy import RenderTargets
+from .preview_policy import RenderTargets, FrameScheduler
 from .state import Mode
 from .audio_monitor import describe_audio_devices
 from .audio_preferences import (
@@ -63,7 +63,11 @@ def run_gui(runtime):
     stream_label = [None]
     last_preview_sequence = [-1]
     last_stream_sequence = [-1]
-    stream_stats = {"start": monotonic(), "frames": 0, "fps": 0.0}
+    stream_stats = {
+        "start": monotonic(), "frames": 0, "fps": 0.0,
+        "render_ms_sum": 0.0, "avg_render_ms": 0.0,
+    }
+    frame_scheduler = FrameScheduler(fps=60)
     # A Discord window capture must remain a normal/unminimized OS window.
     # Opening it behind other apps keeps it capturable without making it topmost.
     inline_preview_active = [True]
@@ -197,7 +201,11 @@ def run_gui(runtime):
         label.pack(fill="both", expand=True)
         stream_window[0], stream_label[0] = win, label
         last_stream_sequence[0] = -1
-        stream_stats.update(start=monotonic(), frames=0, fps=0.0)
+        stream_stats.update(
+            start=monotonic(), frames=0, fps=0.0,
+            render_ms_sum=0.0, avg_render_ms=0.0,
+        )
+        frame_scheduler.reset()
         win.protocol("WM_DELETE_WINDOW", close_stream_window)
         pause_inline_preview()
         # It must be mapped (not truly hidden) for Discord window sharing.
@@ -335,17 +343,30 @@ def run_gui(runtime):
             target_w, target_h = max(2, w), max(2, h)
             scale = min(target_w / image.shape[1], target_h / image.shape[0])
             width, height = max(1, round(image.shape[1] * scale)), max(1, round(image.shape[0] * scale))
-            resized = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
+            # INTER_LINEAR is noticeably cheaper than INTER_AREA when shrinking
+            # 1080p capture to a 720p Discord window and is sufficient for live video.
+            resized = cv2.resize(image, (width, height), interpolation=cv2.INTER_LINEAR)
             rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-            photo = ImageTk.PhotoImage(Image.fromarray(rgb))
-            target.configure(image=photo, text="")
-            target.image = photo
-        except (tk.TclError, ValueError):
+            pil_image = Image.fromarray(rgb)
+
+            # Reuse Tk's existing image allocation while dimensions stay fixed.
+            # Falling back to a fresh PhotoImage is necessary after a resize.
+            photo = getattr(target, "_sap_photo", None)
+            if photo is not None and getattr(target, "_sap_size", None) == (width, height):
+                photo.paste(pil_image)
+            else:
+                photo = ImageTk.PhotoImage(pil_image)
+                target.configure(image=photo, text="")
+                target._sap_photo = photo
+                target._sap_size = (width, height)
+                target.image = photo
+        except (tk.TclError, ValueError, RuntimeError):
             pass
 
     def draw():
         if not root.winfo_exists():
             return
+        started_at = monotonic()
         packet = runtime.preview_frame()
         win = stream_window[0]
         targets = RenderTargets(
@@ -362,26 +383,39 @@ def run_gui(runtime):
             # application occludes this mapped, non-minimized stream window.
             if targets.stream_window and stream_label[0] is not None:
                 if packet.sequence != last_stream_sequence[0]:
-                    last_stream_sequence[0] = packet.sequence
+                    before_render = monotonic()
                     show_frame(stream_label[0], packet,
                                stream_label[0].winfo_width(), stream_label[0].winfo_height())
+                    stream_stats["render_ms_sum"] += (monotonic() - before_render) * 1000
+                    last_stream_sequence[0] = packet.sequence
                     stream_stats["frames"] += 1
                     duration = monotonic() - stream_stats["start"]
                     if duration >= 2.0:
                         stream_stats["fps"] = stream_stats["frames"] / duration
+                        stream_stats["avg_render_ms"] = (
+                            stream_stats["render_ms_sum"] / max(1, stream_stats["frames"])
+                        )
                         stream_stats["frames"] = 0
+                        stream_stats["render_ms_sum"] = 0.0
                         stream_stats["start"] = monotonic()
         else:
             last_preview_sequence[0] = -1
             if inline_preview_active[0] and preview is not None and preview.cget("image"):
                 preview.configure(image="", text="Video preview unavailable — use Automatic and choose a device")
                 preview.image = None
+                preview._sap_photo = None
+                preview._sap_size = None
             if stream_label[0] is not None:
                 last_stream_sequence[0] = -1
                 if stream_label[0].cget("image"):
                     stream_label[0].configure(image="", text="No video — capture is not active")
                     stream_label[0].image = None
-        root.after(16, draw)  # Target 60 FPS; actual rate depends on Tk render cost.
+                    stream_label[0]._sap_photo = None
+                    stream_label[0]._sap_size = None
+        # Frame processing time is part of the 16.67ms budget. Previously the
+        # 16ms delay happened AFTER the work, capping video near 38fps.
+        delay = frame_scheduler.next_delay_ms(started_at, monotonic())
+        root.after(delay, draw)
 
     def update_status():
         if not root.winfo_exists():
@@ -391,7 +425,10 @@ def run_gui(runtime):
         capture_fps = s["capture_fps"]
         fps_info = f"capture {capture_fps:.1f} FPS" if capture_fps is not None else "capture FPS unknown"
         if stream_label[0] is not None:
-            fps_info += f", stream {stream_stats['fps']:.1f} FPS (control preview off)"
+            fps_info += (
+                f", stream {stream_stats['fps']:.1f} FPS "
+                f"(draw {stream_stats['avg_render_ms']:.1f}ms, control preview off)"
+            )
         status_var.set(
             f"{s['mode'].upper()} | {s['screen'].replace('_',' ').title()} | {s['details']} "
             f"| {video} | {fps_info}"

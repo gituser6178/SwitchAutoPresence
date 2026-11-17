@@ -36,4 +36,34 @@ def test_gui_source_compiles_without_starting_a_windows_display():
     compile(source, str(source_path), "exec")
     assert "pause_inline_preview()" in source
     assert "win.lower()" in source
-    assert "root.after(16, draw)" in source
+    assert "frame_scheduler.next_delay_ms(started_at, monotonic())" in source
+    assert "root.after(delay, draw)" in source
+
+
+
+def test_frame_scheduler_accounts_for_draw_time():
+    from switchautopresence.preview_policy import FrameScheduler
+    schedule = FrameScheduler(60)
+    # A 10ms frame gets only ~6ms more idle, not an extra 16ms.
+    assert schedule.next_delay_ms(1.000, 1.010) in (6, 7)
+    assert schedule.next_delay_ms(1.016, 1.026) in (6, 7)
+
+
+def test_frame_scheduler_runs_as_fast_as_possible_when_over_budget():
+    from switchautopresence.preview_policy import FrameScheduler
+    schedule = FrameScheduler(60)
+    assert schedule.next_delay_ms(1.0, 1.030) == 1
+    assert schedule.next_delay_ms(1.031, 1.060) == 1
+    schedule.reset()
+    assert schedule.next_delay_ms(2.0, 2.010) in (6, 7)
+
+
+def test_frame_scheduler_limits_and_nonmonotonic_clocks():
+    from switchautopresence.preview_policy import FrameScheduler
+    import pytest
+    with pytest.raises(ValueError):
+        FrameScheduler(0)
+    with pytest.raises(ValueError):
+        FrameScheduler(241)
+    with pytest.raises(ValueError):
+        FrameScheduler().next_delay_ms(3.0, 2.0)
