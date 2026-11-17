@@ -61,6 +61,21 @@ OpenCV captures **video only**. For sound, v0.3 includes optional in-process mon
 
 Do not consider the streaming pipeline fully validated until video **and** audio are tested.
 
+## Audio input test (recommended before Discord streaming)
+
+**We now have a read-only HDMI-audio diagnostic.** First run `audio-devices` to find the GC553Pro's Windows recording endpoint and the default playback device. Then close the app, play an audible Switch game, and run `audio-test` with the selected input index:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence audio-devices
+.\.venv\Scripts\python.exe -m switchautopresence audio-test --input N --seconds 8
+~~~
+
+Replace `N` with the correct **AVerMedia recording input index**, not your video device index (the indices may differ). The test reports RMS/peak levels without playing or saving audio.
+
+If it reports **signal**, launch the app, enter the same HDMI audio input index in its audio controls, and click **Start audio monitor**. The GUI now shows audio levels. The optional output device field lets you choose your actual headphones/speakers; leaving it blank uses the default playback output. Then use Discord Windows desktop to share the **SwitchAutoPresence Stream** application and enable **Share audio** when available.
+
+**A successful audio level test does not prove Discord viewers hear it.** Only a remote listener can confirm sound and synchronization. See [audio testing guide](docs/AUDIO_TESTING.md) for the three-step verification and troubleshooting.
+
 ## Installation (Windows 10/11)
 
 You need Python 3.10+ and an existing SwitchAutoPresence clone. If you already cloned the earlier build:
