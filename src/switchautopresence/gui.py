@@ -15,6 +15,7 @@ from PIL import Image, ImageTk
 import cv2
 
 from .preview_policy import RenderTargets
+from .state import Mode
 from .audio_monitor import describe_audio_devices
 from .audio_preferences import (
     load_audio_selection,
@@ -77,6 +78,7 @@ def run_gui(runtime):
             w, h = (int(v) for v in dims.split("x"))
             runtime.configure_video(index, backend=backend_var.get(), width=w, height=h, fps=int(fps_value))
             runtime.select_auto()
+            root.after(200, route_audio)
         except ValueError as exc:
             messagebox.showerror("Video settings", str(exc))
 
@@ -103,6 +105,7 @@ def run_gui(runtime):
     def set_manual():
         try:
             runtime.select_manual(game_var.get(), image_var.get().strip())
+            audio_notice.set("Manual mode: capture and sound are handled by Discord.")
         except ValueError as exc:
             messagebox.showerror("Manual game", str(exc))
 
@@ -127,8 +130,8 @@ def run_gui(runtime):
         # Remove the blank 760px preview area as well: leave a compact
         # controller while the separate stream source is running.
         original_control_geometry[0] = root.geometry()
-        root.minsize(740, 390)
-        root.geometry("850x455")
+        root.minsize(740, 480)
+        root.geometry("850x540")
 
     def resume_inline_preview():
         """Recreate a fresh widget only after the stream source closes."""
@@ -208,76 +211,117 @@ def run_gui(runtime):
     show_stream_button.pack(side="right", padx=(0, 8))
     ttk.Button(actions, text="Start stream source", command=open_stream_window).pack(side="right")
 
-    audio_box = ttk.Frame(body)
-    audio_box.pack(fill="x", pady=(4, 2))
-    audio_devices = []
-    try:
-        audio_devices = describe_audio_devices()
-    except (RuntimeError, OSError, ValueError):
-        # The GUI and manual game selection still work without audio hardware.
-        pass
+    audio_box = ttk.LabelFrame(body, text="HDMI audio — automatic", padding=(8, 6))
+    audio_box.pack(fill="x", pady=(4, 3))
     saved_audio = load_audio_selection()
-    suggested_input = preferred_audio_input(audio_devices, saved_audio)
-    suggested_output = preferred_audio_output(audio_devices, saved_audio)
-    audio_var = tk.StringVar(value=str(suggested_input) if suggested_input is not None else "")
-    output_var = tk.StringVar(value=str(suggested_output) if suggested_output is not None else "")
-    ttk.Label(audio_box, text="AVerMedia HDMI audio input #").pack(side="left", padx=(0, 6))
-    ttk.Entry(audio_box, textvariable=audio_var, width=5).pack(side="left")
-    ttk.Label(audio_box, text="Windows playback output # (optional)").pack(side="left", padx=(12, 6))
-    ttk.Entry(audio_box, textvariable=output_var, width=5).pack(side="left")
-    audio_button = ttk.Button(audio_box)
-    audio_button.pack(side="left", padx=(8, 0))
+    audio_devices = []
+    input_by_label = {}
+    output_by_label = {"System default playback": None}
+    audio_input_var = tk.StringVar()
+    audio_output_var = tk.StringVar(value="System default playback")
+    audio_notice = tk.StringVar(value="Audio: detecting AVerMedia HDMI input...")
+    audio_level_var = tk.StringVar(value="Audio: connecting...")
 
-    def toggle_audio():
-        if runtime.status()["audio_enabled"]:
-            runtime.disable_audio()
+    input_row = ttk.Frame(audio_box)
+    input_row.pack(fill="x", pady=(0, 3))
+    ttk.Label(input_row, text="Recording input").pack(side="left", padx=(0, 7))
+    input_combo = ttk.Combobox(input_row, textvariable=audio_input_var, state="readonly", width=47)
+    input_combo.pack(side="left", fill="x", expand=True)
+
+    output_row = ttk.Frame(audio_box)
+    output_row.pack(fill="x")
+    ttk.Label(output_row, text="Playback output").pack(side="left", padx=(0, 7))
+    output_combo = ttk.Combobox(output_row, textvariable=audio_output_var, state="readonly", width=45)
+    output_combo.pack(side="left", fill="x", expand=True)
+
+    def discover_audio_choices():
+        """Refresh PortAudio indices without ever selecting a microphone by default."""
+        audio_devices.clear()
+        input_by_label.clear()
+        output_by_label.clear()
+        output_by_label["System default playback"] = None
+        try:
+            audio_devices.extend(describe_audio_devices())
+        except (RuntimeError, OSError, ValueError) as exc:
+            audio_notice.set(f"Audio unavailable: {exc}")
+            input_combo.configure(values=())
+            output_combo.configure(values=("System default playback",))
+            return False
+        for device in audio_devices:
+            label = f"[{device.index}] {device.name} ({device.hostapi})"
+            if device.input_channels and "not to use" not in device.name.casefold():
+                input_by_label[label] = device.index
+            if device.output_channels:
+                output_by_label[label] = device.index
+        wanted = preferred_audio_input(audio_devices, load_audio_selection())
+        input_labels = sorted(
+            input_by_label,
+            key=lambda label: (
+                input_by_label[label] != wanted,
+                "hdmi" not in label.casefold(),
+                label.casefold(),
+            ),
+        )
+        input_combo.configure(values=input_labels)
+        output_combo.configure(values=list(output_by_label))
+        if wanted is not None:
+            selected = next((label for label, index in input_by_label.items() if index == wanted), "")
+            audio_input_var.set(selected)
+        elif not audio_input_var.get() or audio_input_var.get() not in input_by_label:
+            audio_input_var.set("")
+            audio_notice.set("No AVerMedia HDMI device found. Connect the capture card, then Rescan.")
+        wanted_output = preferred_audio_output(audio_devices, load_audio_selection())
+        selected_out = next(
+            (label for label, index in output_by_label.items() if index == wanted_output),
+            "System default playback",
+        )
+        audio_output_var.set(selected_out)
+        return True
+
+    def route_audio():
+        """Start/reconfigure sound automatically. No Start Audio button."""
+        if runtime.session.snapshot().mode != Mode.AUTO:
+            audio_notice.set("Audio is managed by Discord in Manual mode.")
+            return
+        selected = audio_input_var.get()
+        input_id = input_by_label.get(selected)
+        output_id = output_by_label.get(audio_output_var.get())
+        if input_id is None:
+            audio_notice.set("Audio unavailable: select an AVerMedia HDMI input or click Rescan.")
             return
         try:
-            raw_input = audio_var.get().strip()
-            if not raw_input:
-                # Recheck the currently attached card: Audio device indices can
-                # change after reconnecting a USB capture card.
-                discovered = describe_audio_devices()
-                suggested = preferred_audio_input(discovered, load_audio_selection())
-                if suggested is None:
-                    raise ValueError(
-                        "No AVerMedia HDMI recording endpoint was found. "
-                        "Run audio-devices once and choose an HDMI input."
-                    )
-                raw_input = str(suggested)
-                audio_var.set(raw_input)
-            try:
-                input_id = int(raw_input)
-                output_id = int(output_var.get().strip()) if output_var.get().strip() else None
-            except ValueError as exc:
-                raise ValueError("The audio device numbers must be integers.") from exc
-            if input_id < 0 or (output_id is not None and output_id < 0):
-                raise ValueError("The audio device numbers must be non-negative.")
             runtime.enable_audio(input_id, output_device=output_id)
-            # Successful routing is the right time to persist the selected
-            # endpoint by name and host API, not merely a fragile index.
+            audio_notice.set(f"Audio active: {selected}")
             try:
-                devices = describe_audio_devices()
-                preference = selection_from_devices(devices, input_id, output_id)
-                save_audio_selection(preference)
+                selection = selection_from_devices(audio_devices, input_id, output_id)
+                save_audio_selection(selection)
             except (OSError, ValueError, RuntimeError):
-                # Playback is working; a preferences write failure should not
-                # interrupt sound or label its route as broken.
+                # Do not interrupt sound because preferences couldn't be saved.
                 pass
-        except ValueError as exc:
-            messagebox.showerror("Audio device", str(exc))
-        except RuntimeError as exc:
-            messagebox.showerror("Audio monitor", str(exc))
+        except (ValueError, RuntimeError) as exc:
+            # A failed audio route must not block capture, Discord or game selection.
+            audio_notice.set(f"Audio unavailable: {exc}")
 
-    audio_button.configure(text="Start audio monitor", command=toggle_audio)
-    audio_level_var = tk.StringVar(value="Audio: not monitoring")
-    ttk.Label(body, textvariable=audio_level_var, font=("Segoe UI", 10, "bold")).pack(anchor="w")
-    ttk.Label(
-        body,
-        text="The app remembers your AVerMedia HDMI input. Leave output blank for your "
-             "default Windows DAC. Disable Windows Listen to avoid duplicate audio.",
-        wraplength=800, font=("Segoe UI", 9),
-    ).pack(anchor="w", pady=(1, 8))
+    def choose_audio_device(_event=None):
+        route_audio()
+
+    def rescan_audio_devices():
+        if discover_audio_choices():
+            route_audio()
+
+    def toggle_mute():
+        new_mute = not runtime.status().get("audio_muted", False)
+        runtime.set_audio_muted(new_mute)
+        mute_button.configure(text="Unmute" if new_mute else "Mute")
+
+    mute_button = ttk.Button(output_row, text="Mute", width=9, command=toggle_mute)
+    mute_button.pack(side="right", padx=(9, 0))
+    ttk.Button(input_row, text="Rescan", command=rescan_audio_devices).pack(side="right", padx=(8, 0))
+    input_combo.bind("<<ComboboxSelected>>", choose_audio_device)
+    output_combo.bind("<<ComboboxSelected>>", choose_audio_device)
+    discover_audio_choices()
+    ttk.Label(body, textvariable=audio_level_var, font=("Segoe UI", 10)).pack(anchor="w")
+    ttk.Label(body, textvariable=audio_notice, wraplength=820).pack(anchor="w")
 
     ttk.Separator(body).pack(fill="x", pady=5)
     status_var = tk.StringVar()
@@ -352,7 +396,7 @@ def run_gui(runtime):
             f"{s['mode'].upper()} | {s['screen'].replace('_',' ').title()} | {s['details']} "
             f"| {video} | {fps_info}"
         )
-        audio_button.configure(text="Stop audio monitor" if s["audio_enabled"] else "Start audio monitor")
+        mute_button.configure(text="Unmute" if s["audio_muted"] else "Mute")
         levels = s.get("audio_levels")
         if levels is not None:
             route = levels.get("route_mode", "unknown")
@@ -366,7 +410,7 @@ def run_gui(runtime):
                 f"({'signal' if levels['has_signal'] else ('weak peaks' if levels.get('has_peaks') else 'nearly silent')})"
             )
         else:
-            audio_level_var.set("Audio: monitor OFF; run audio-test to check HDMI input")
+            audio_level_var.set("Audio: muted" if s["audio_muted"] else "Audio: not connected")
         if s.get("audio_error"):
             hint_var.set(s["audio_error"])
         elif s["error"]:
@@ -401,6 +445,9 @@ def run_gui(runtime):
 
     root.protocol("WM_DELETE_WINDOW", close)
     runtime.start()
+    # Automatically connect HDMI sound. Users can change devices or mute
+    # without stopping the stream; Manual mode delegates capture to Discord.
+    root.after(400, route_audio)
     draw()
     update_status()
     root.mainloop()
