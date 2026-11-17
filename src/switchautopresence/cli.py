@@ -36,6 +36,7 @@ def make_parser() -> argparse.ArgumentParser:
     meter = sub.add_parser("audio-test", help="Measure input audio level; no playback, saving or recording")
     meter.add_argument("--input", type=int, required=True, help="Audio device index from audio-devices")
     meter.add_argument("--seconds", type=float, default=8.0, help="Duration, 1-30 seconds")
+    meter.add_argument("--samplerate", type=int, default=None, help="Override input device default sample rate")
     meter.add_argument("--json", action="store_true", help="Machine-readable result")
     sub.add_parser("windows", help="[Optional] List app windows for viewer-based diagnostics")
     wp = sub.add_parser("probe-window", help="[Optional] Test an already-open external video viewer window")
@@ -116,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--input must be >= 0 and --seconds must be between 1 and 30")
         try:
             from .audio_monitor import probe_audio_input
-            result = probe_audio_input(args.input, seconds=args.seconds)
+            result = probe_audio_input(args.input, seconds=args.seconds, samplerate=args.samplerate)
             if args.json:
                 print(json.dumps(result, indent=2))
             else:
