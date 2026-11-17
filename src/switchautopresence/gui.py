@@ -407,7 +407,7 @@ def run_gui(runtime):
                 f"({route}, {conversion}{buffer}): "
                 f"RMS {levels['latest_rms_dbfs']:.1f} dBFS, "
                 f"peak {levels['latest_peak_dbfs']:.1f} dBFS "
-                f"({'signal' if levels['has_signal'] else ('weak peaks' if levels.get('has_peaks') else 'nearly silent')})"
+                f"({'MUTED' if s['audio_muted'] else ('signal' if levels['has_signal'] else ('weak peaks' if levels.get('has_peaks') else 'nearly silent'))})"
             )
         else:
             audio_level_var.set("Audio: muted" if s["audio_muted"] else "Audio: not connected")
