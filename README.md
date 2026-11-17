@@ -61,6 +61,24 @@ OpenCV captures **video only**. For sound, v0.3 includes optional in-process mon
 
 Do not consider the streaming pipeline fully validated until video **and** audio are tested.
 
+
+### Audio relay to your default Windows output (no "Listen to this device")
+
+**No Windows Listen checkbox is required.** SwitchAutoPresence can now read HDMI audio from AVerMedia using Windows WASAPI and play it through your default Windows output, including a different host API or sample rate. The input and output are separate PortAudio streams connected by an in-memory, bounded resampling buffer. The input is never sent to cloud services or saved as a recording.
+
+On the initial tester's PC, **HDMI audio input #14 = 48 kHz WASAPI** and the **default TOPPING USB DAC output #5 = 44.1 kHz MME**. This is now handled by the separate-stream route; previously a single duplex stream could not connect those two host APIs.
+
+1. **Disable** Windows Sound → Recording → AVerMedia HDMI → Properties → **Listen to this device** before starting the app. Otherwise you will hear doubled audio.
+2. Launch \`.\.venv\Scripts\python.exe -m switchautopresence app --device 1\` and use Automatic mode (the capture card must be free of Discord direct capture).
+3. Type **14** as HDMI input, leave optional playback output **blank** so Windows' default TOPPING DAC is used, then click **Start audio monitor**.
+4. The audio meter should report **separate**, **48000→44100 Hz**, and **output #5** while playing the game through your default speakers/headphones.
+5. Check audio locally first, then enable **Share audio** when screen-sharing the **SwitchAutoPresence Stream** application in Discord; verify with a remote listener.
+
+**Important:** the actual measured HDMI input #14 previously reported approximately -66.5 dBFS average. This routing fix cannot turn a genuinely quiet or incorrect input into loud game audio. If the meter remains nearly silent, stop the monitor, run the \`audio-test\` command against the alternate **HDMI input #9 (DirectSound)** and compare levels. The probe now uses the selected recording device's *native* sample rate (44.1 kHz for #9, 48 kHz for #14). Do not use any "Not To Use" endpoint or a microphone.
+
+This is experimental until audio output and synchronization are verified on Windows with Discord. The buffer targets a modest latency and may underrun or drift on incompatible drivers; report warnings and actual results.
+
+
 ## Audio input test (recommended before Discord streaming)
 
 **We now have a read-only HDMI-audio diagnostic.** First run `audio-devices` to find the GC553Pro's Windows recording endpoint and the default playback device. Then close the app, play an audible Switch game, and run `audio-test` with the selected input index:
