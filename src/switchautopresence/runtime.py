@@ -310,8 +310,8 @@ class Runtime:
             "audio_enabled": bool(self._audio and self._audio.running),
             "audio_muted": self._audio_muted,
             "audio_input": self._audio.input_device if self._audio else None,
-            "audio_output": self._audio.output_device if self._audio else None,
+            "audio_output": getattr(self._audio, "output_device", None) if self._audio else None,
             "audio_levels": self._audio.levels() if self._audio and self._audio.running else None,
-            "audio_error": self._audio.error if self._audio else None,
+            "audio_error": getattr(self._audio, "error", None) if self._audio else None,
             "error": self.error or (reader.error if reader else None) or self.publisher.error,
         }
