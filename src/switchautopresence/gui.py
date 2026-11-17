@@ -51,6 +51,7 @@ def run_gui(runtime):
     stream_label = [None]
     last_preview_sequence = [-1]
     last_stream_sequence = [-1]
+    render_tick = [0]
 
     def enable_auto():
         try:
@@ -172,9 +173,11 @@ def run_gui(runtime):
     def draw():
         if not root.winfo_exists():
             return
+        render_tick[0] += 1
         packet = runtime.preview_frame()
         if packet is not None:
-            if packet.sequence != last_preview_sequence[0]:
+            # When sharing the pop-out, update the small control preview only ~10 FPS.
+            if (stream_label[0] is None or render_tick[0] % 3 == 0) and packet.sequence != last_preview_sequence[0]:
                 last_preview_sequence[0] = packet.sequence
                 show_frame(preview, packet, preview.winfo_width(), preview.winfo_height())
             if stream_label[0] is not None and packet.sequence != last_stream_sequence[0]:
@@ -191,7 +194,7 @@ def run_gui(runtime):
                 if stream_label[0].cget("image"):
                     stream_label[0].configure(image="", text="No video — capture is not active")
                     stream_label[0].image = None
-        root.after(65, draw)  # ~15 FPS display; OCR runs separately, ~every 2 sec.
+        root.after(33, draw)  # Target up to ~30 FPS; actual rate depends on PC/GUI render cost.
 
     def update_status():
         if not root.winfo_exists():
