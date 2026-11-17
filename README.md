@@ -59,16 +59,16 @@ You need Python 3.10+ and an existing SwitchAutoPresence clone. If you already c
 git fetch origin
 git switch feat/phase2-auto-manual-presence
 git pull --ff-only origin feat/phase2-auto-manual-presence
-..venvScriptspython.exe -m pip install --upgrade -e ".[all]"
-..venvScriptspython.exe -m switchautopresence --help
+.\.venv\Scripts\python.exe -m pip install --upgrade -e ".[all]"
+.\.venv\Scripts\python.exe -m switchautopresence --help
 ~~~
 
 **OpenCV installation note:** The OpenCV project says `opencv-python` and `opencv-python-headless` should NOT coexist. Some dependency combinations may install both. If `cv2` import breaks or both variants appear, after installing requirements run:
 
 ~~~powershell
-..venvScriptspython.exe -m pip uninstall -y opencv-python opencv-python-headless
-..venvScriptspython.exe -m pip install --no-deps --force-reinstall "opencv-python-headless>=4.8,<5"
-..venvScriptspython.exe -c "import cv2; print(cv2.__version__)"
+.\.venv\Scripts\python.exe -m pip uninstall -y opencv-python opencv-python-headless
+.\.venv\Scripts\python.exe -m pip install --no-deps --force-reinstall "opencv-python-headless>=4.8,<5"
+.\.venv\Scripts\python.exe -c "import cv2; print(cv2.__version__)"
 ~~~
 
 This repair operates **only inside the project virtual environment**. The project uses Pillow/Tkinter for previews, so headless OpenCV is sufficient.
@@ -78,13 +78,13 @@ This repair operates **only inside the project virtual environment**. The projec
 Find the AVerMedia index:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence devices
+.\.venv\Scripts\python.exe -m switchautopresence devices
 ~~~
 
 Close Discord's direct capture of that device, then start the application:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --device 1 --width 1920 --height 1080 --fps 60
+.\.venv\Scripts\python.exe -m switchautopresence app --device 1 --width 1920 --height 1080 --fps 60
 ~~~
 
 The `--device 1` value was correct in one initial GC553Pro test; yours may differ. If no video appears, try **1280×720 @ 60** from the UI or the alternate `--backend msmf` option. Actual negotiated frame size and FPS are displayed by the UI. The app will retry the driver's default format once if the requested format produces no frames.
@@ -94,7 +94,7 @@ Use **Open stream window** in the UI and share that window on Discord. **Do not 
 To test HOME recognition without a Discord Application ID, close the app and run:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence scan-device --device 1 --seconds 12
+.\.venv\Scripts\python.exe -m switchautopresence scan-device --device 1 --seconds 12
 ~~~
 
 Navigate to Switch HOME and highlight a recognizable game while this command runs. Report the output; no screenshots or recorded video are saved.
@@ -106,7 +106,7 @@ Navigate to Switch HOME and highlight a recognizable game while this command run
 3. Run the app with `--app-id YOUR_APPLICATION_ID` and keep Discord desktop open.
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --device 1 --app-id YOUR_APPLICATION_ID
+.\.venv\Scripts\python.exe -m switchautopresence app --device 1 --app-id YOUR_APPLICATION_ID
 ~~~
 
 Discord should display **Nintendo Switch** with game details and session time. For game art, add a permitted HTTPS image URL or upload assets in your Developer Application; otherwise Discord may show the app's default icon. No game covers are copied into this repository.
