@@ -1,3 +1,3 @@
-"""SwitchAutoPresence -- local capture-to-presence experiments."""
+"""SwitchAutoPresence: local capture recognition and Discord presence."""
 
-__version__ = "0.1.0a1"
+__version__ = "0.2.0a1"
