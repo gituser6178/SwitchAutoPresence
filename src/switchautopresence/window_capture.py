@@ -58,6 +58,7 @@ class WindowCapture:
         self.clock = clock
         self.frames: Queue[tuple[float, np.ndarray]] = Queue(maxsize=1)
         self._control = None
+        self._capture = None
         self.closed = False
         self.error: str | None = None
         self._last_sample = -float("inf")
@@ -110,6 +111,7 @@ class WindowCapture:
             self.closed = False
             self.error = None
             self._control = capture.start_free_threaded()
+            self._capture = capture  # retain Python callback owner during capture
         except Exception as exc:
             self.error = f"Could not capture window '{self.title}': {exc}"
             raise RuntimeError(self.error) from exc
@@ -127,3 +129,4 @@ class WindowCapture:
             except Exception:
                 pass
             self._control = None
+            self._capture = None
