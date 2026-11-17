@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox, ttk
+from time import monotonic
 
 from PIL import Image, ImageTk
 import cv2
@@ -52,6 +53,7 @@ def run_gui(runtime):
     last_preview_sequence = [-1]
     last_stream_sequence = [-1]
     render_tick = [0]
+    stream_stats = {"start": monotonic(), "frames": 0, "fps": 0.0}
 
     def enable_auto():
         try:
@@ -176,14 +178,20 @@ def run_gui(runtime):
         render_tick[0] += 1
         packet = runtime.preview_frame()
         if packet is not None:
-            # When sharing the pop-out, update the small control preview only ~10 FPS.
-            if (stream_label[0] is None or render_tick[0] % 3 == 0) and packet.sequence != last_preview_sequence[0]:
+            # While streaming, prioritize the dedicated window over the control preview.
+            if (stream_label[0] is None or render_tick[0] % 6 == 0) and packet.sequence != last_preview_sequence[0]:
                 last_preview_sequence[0] = packet.sequence
                 show_frame(preview, packet, preview.winfo_width(), preview.winfo_height())
             if stream_label[0] is not None and packet.sequence != last_stream_sequence[0]:
                 last_stream_sequence[0] = packet.sequence
                 show_frame(stream_label[0], packet,
                            stream_label[0].winfo_width(), stream_label[0].winfo_height())
+                stream_stats["frames"] += 1
+                duration = monotonic() - stream_stats["start"]
+                if duration >= 2.0:
+                    stream_stats["fps"] = stream_stats["frames"] / duration
+                    stream_stats["frames"] = 0
+                    stream_stats["start"] = monotonic()
         else:
             last_preview_sequence[0] = -1
             if preview.cget("image"):
@@ -194,16 +202,20 @@ def run_gui(runtime):
                 if stream_label[0].cget("image"):
                     stream_label[0].configure(image="", text="No video — capture is not active")
                     stream_label[0].image = None
-        root.after(33, draw)  # Target up to ~30 FPS; actual rate depends on PC/GUI render cost.
+        root.after(16, draw)  # Target 60 FPS; actual rate depends on Tk render cost.
 
     def update_status():
         if not root.winfo_exists():
             return
         s = runtime.status()
         video = s["capture_resolution"] or "no frames"
+        capture_fps = s["capture_fps"]
+        fps_info = f"capture {capture_fps:.1f} FPS" if capture_fps is not None else "capture FPS unknown"
+        if stream_label[0] is not None:
+            fps_info += f", preview {stream_stats['fps']:.1f} FPS"
         status_var.set(
             f"{s['mode'].upper()} | {s['screen'].replace('_',' ').title()} | {s['details']} "
-            f"| Video {video}"
+            f"| {video} | {fps_info}"
         )
         audio_button.configure(text="Stop audio monitor" if s["audio_enabled"] else "Start audio monitor")
         if s["error"]:
@@ -211,10 +223,13 @@ def run_gui(runtime):
         elif s["mode"] == "manual":
             hint_var.set("Manual mode releases video capture: stream directly from AVerMedia in Discord if desired.")
         elif s["mode"] == "auto":
-            hint_var.set(
-                "Share 'SwitchAutoPresence Stream' window in Discord instead of opening the "
-                "AVerMedia directly. HOME-selected title is not considered playing until launch."
-            )
+            if s["screen"] in ("home", "launching", "unknown"):
+                candidate = s["candidate"] or "none"
+                ocr = (s["ocr_text"] or "(OCR returned no text)")[:140]
+                hint_var.set(f"HOME title candidate: {candidate} | OCR: {ocr} | "
+                             "A valid title is required before launching.")
+            else:
+                hint_var.set("Share 'SwitchAutoPresence Stream' in Discord; do not open AVerMedia directly.")
         else:
             hint_var.set("Rich Presence cleared. Select Automatic or Manual to resume.")
         root.after(750, update_status)

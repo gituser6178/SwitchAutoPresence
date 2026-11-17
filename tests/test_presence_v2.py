@@ -380,3 +380,40 @@ def test_cli_has_old_and_new_commands():
     assert parser.parse_args(["probe-window", "--seconds", "10"]).seconds == 10
     assert parser.parse_args(["scan-window", "--roi", "0.1,0.2,0.7,0.3"]).roi == "0.1,0.2,0.7,0.3"
     assert parser.parse_args(["app", "--app-id", "123"]).app_id == "123"
+
+
+def test_ocr_temporary_miss_keeps_candidate_before_launch():
+    s = session()
+    s.home("The Legend of Zelda: Ocarina of Time")
+    for _ in range(3):
+        s.home(None)
+    assert s.snapshot().candidate == "The Legend of Zelda: Ocarina of Time"
+    for _ in range(3):
+        s.non_home()
+    assert s.snapshot().confirmed == "The Legend of Zelda: Ocarina of Time"
+
+
+def test_many_ocr_misses_expire_candidate_to_prevent_wrong_game():
+    s = session()
+    s.home("Pokémon Violet")
+    for _ in range(4):
+        s.home(None)
+    assert s.snapshot().candidate is None
+    for _ in range(3):
+        s.non_home()
+    assert s.snapshot().screen == Screen.UNKNOWN
+
+
+def test_home_selection_change_replaces_candidate():
+    s = session()
+    s.home("Pokémon Violet")
+    s.home(None)
+    s.home("Mario Kart World")
+    for _ in range(3):
+        s.non_home()
+    assert s.snapshot().confirmed == "Mario Kart World"
+
+
+def test_ocr_miss_tolerance_validated():
+    with pytest.raises(ValueError):
+        Session(ocr_miss_tolerance=-1)

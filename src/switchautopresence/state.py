@@ -49,9 +49,11 @@ class Session:
     signal failure. A lack of newly-rendered frames alone is not signal loss.
     """
 
-    def __init__(self, *, launch_samples: int = 3, clock=time):
+    def __init__(self, *, launch_samples: int = 3, ocr_miss_tolerance: int = 3, clock=time):
         if launch_samples < 2:
             raise ValueError("launch_samples must be >= 2")
+        if not 0 <= ocr_miss_tolerance <= 20:
+            raise ValueError("ocr_miss_tolerance must be between 0 and 20")
         self._lock = RLock()
         self.mode = Mode.AUTO
         self.screen = Screen.WAITING
@@ -61,12 +63,21 @@ class Session:
         self.started_at: int | None = None
         self._non_home_count = 0
         self._launch_samples = launch_samples
+        self._ocr_miss_tolerance = ocr_miss_tolerance
+        self._ocr_misses = 0
         self._clock = clock
 
     def home(self, selected_title: str | None) -> None:
         with self._lock:
             self.screen = Screen.HOME
-            self.candidate = selected_title
+            if selected_title:
+                self.candidate = selected_title
+                self._ocr_misses = 0
+            elif self.candidate is not None:
+                # Tolerate a few blank OCR reads without keeping stale titles indefinitely.
+                self._ocr_misses += 1
+                if self._ocr_misses > self._ocr_miss_tolerance:
+                    self.candidate = None
             # A highlighted HOME tile may be suspended; do not claim playing.
             self.confirmed = None
             self.started_at = None
@@ -95,6 +106,7 @@ class Session:
             self.screen = Screen.NO_SIGNAL
             self._non_home_count = 0
             self.candidate = None
+            self._ocr_misses = 0
             self.confirmed = None
             self.started_at = None
 
@@ -117,6 +129,7 @@ class Session:
             # Explicitly require a fresh HOME observation after override.
             self.screen = Screen.WAITING
             self.candidate = None
+            self._ocr_misses = 0
             self.confirmed = None
             self.started_at = None
             self._non_home_count = 0

@@ -61,6 +61,7 @@ class Runtime:
         self._last_frame_at: float | None = None
         self._last_sequence = 0
         self._next_recognition = 0.0
+        self._last_home_ocr = None  # last HOME OCR result retained for diagnosis
         self._audio: AudioMonitor | None = None
         self.error: str | None = None
         mode, manual = load_mode(settings_file)
@@ -108,6 +109,7 @@ class Runtime:
     def select_auto(self) -> None:
         self.error = None
         self.session.resume_auto()
+        self._last_home_ocr = None
         self._dark_count = 0
         self._persist()
 
@@ -171,6 +173,7 @@ class Runtime:
     def _observe(self, frame) -> None:
         result = self.recognizer.analyze(frame)
         if result.kind == FrameKind.HOME:
+            self._last_home_ocr = result
             self._dark_count = 0
             self.session.home(result.title)
         elif result.kind == FrameKind.DARK:
@@ -254,6 +257,9 @@ class Runtime:
             "mode": snap.mode.value,
             "screen": snap.screen.value,
             "candidate": snap.candidate,
+            "ocr_text": self._last_home_ocr.raw_text if self._last_home_ocr else "",
+            "ocr_confidence": round(self._last_home_ocr.confidence, 2) if self._last_home_ocr else None,
+            "ocr_match": self._last_home_ocr.title if self._last_home_ocr else None,
             "confirmed": snap.confirmed,
             "manual": snap.manual_title,
             "details": snap.activity.details if snap.activity else "No activity",
@@ -262,6 +268,7 @@ class Runtime:
             "capture_open": bool(reader and reader.opened),
             "capture_resolution": f"{reader.width}x{reader.height}" if reader and reader.width else None,
             "capture_fps": reader.observed_fps if reader else None,
+            "target_fps": options.fps if options else None,
             "using_defaults": bool(reader and reader.using_defaults),
             "frame_age": round(self.clock() - self._last_frame_at, 1) if self._last_frame_at else None,
             "audio_enabled": bool(self._audio and self._audio.running),

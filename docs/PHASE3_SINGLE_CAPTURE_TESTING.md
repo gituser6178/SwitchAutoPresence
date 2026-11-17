@@ -82,3 +82,11 @@ If the audio endpoint isn't exposed or Discord doesn't receive the app's sound, 
 ## Report
 
 Provide text for: capture index, successful stream-window preview, actual resolution and FPS, Discord window-share behavior, HOME OCR text, manual-mode behavior, and whether audio worked. Avoid uploading sensitive personal footage.
+
+## 60 FPS and HOME title troubleshooting
+
+The GUI requests a 16 ms redraw target and reports actual **capture FPS** and **stream-window FPS**. If the stream preview is still below 60 FPS, the Tkinter renderer needs further optimization. This is not the same as the capture-card FPS.
+
+When the app shows HOME → Launching → Unknown, check the `HOME title candidate` and `OCR` status in the controller. If the candidate never becomes a real title, close the app and run `scan-device --device 1 --seconds 12` with Zelda highlighted. Share the diagnostic *text* to calibrate it, not gameplay frames. A few intermittent OCR misses no longer immediately erase a recognized candidate.
+
+Audio sharing is not proven until a remote Discord listener confirms sound (with the AVerMedia HDMI audio input selected and the audio monitor enabled). Turn off the monitor if you hear feedback or duplicate sound.

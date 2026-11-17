@@ -128,7 +128,7 @@ See [Phase 3 testing guide](docs/PHASE3_SINGLE_CAPTURE_TESTING.md) for a complet
 
 ## Known limitations
 
-- The Tkinter video-only window renders at up to **30 FPS** (rendering target, not a guaranteed frame rate); this is a functional preview, **not yet a high-performance 60 FPS streaming renderer**. HDMI passthrough on the AVerMedia is not affected.
+- The Tkinter video-only window renders at up to **60 FPS** (rendering target, not a guaranteed frame rate); this is a functional preview, **not yet a validated 60 FPS streaming renderer**. HDMI passthrough on the AVerMedia is not affected.
 - Full-speed capture decode and per-frame Tkinter image drawing may use CPU. OCR is sampled infrequently rather than processed on every frame.
 - The GC553Pro hardware probe succeeded alone (426 frames / 8 sec, no read errors), and failed while another app used its video feed. The integrated preview has **not yet been hardware-tested**.
 - The capture device must be free when Automatic mode starts. Manual mode relinquishes it.
@@ -141,3 +141,11 @@ See [Phase 3 testing guide](docs/PHASE3_SINGLE_CAPTURE_TESTING.md) for a complet
 The app runs locally by default. No video or audio is saved or uploaded by this code. The only intended network-facing presence action is Discord's IPC client, which publishes game title/details/artwork you configure. Do not include personal screenshots, secrets, tokens, or unlicensed game covers in PRs.
 
 Code is **MIT-licensed**. Nintendo, Discord, and AVerMedia are unaffiliated with and do not endorse this project. Game trademarks and third-party artwork belong to their respective owners.
+
+### 60 FPS and HOME OCR diagnostics
+
+- The dedicated stream window now targets a frame refresh every **16 ms** (roughly 60 FPS), but Tkinter/Pillow can be slower. The controller displays measured capture FPS and measured stream-window FPS; neither is guaranteed.
+- HOME title candidates survive up to **three consecutive OCR misses** (about 6 seconds at default sampling), to avoid losing a recognized title immediately before a launch. Repeated misses still expire the title to avoid falsely identifying another game.
+- When recognition fails, the controller shows the **last HOME OCR text** and candidate title. If the candidate remains `none`, `scan-device` can help tune the OCR region.
+- The project now uses **opencv-python 4.x** as its sole OpenCV dependency. If you previously installed both OpenCV variants in the virtual environment, uninstall both and reinstall `.[all]` once.
+- Audio is still **experimental**: choose the AVerMedia HDMI audio endpoint and confirm a remote Discord listener hears the sound when application audio sharing is enabled.
