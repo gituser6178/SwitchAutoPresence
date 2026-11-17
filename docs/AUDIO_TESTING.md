@@ -91,3 +91,26 @@ Official references:
 - AVerMedia HDMI audio troubleshooting: https://www.avermedia.com/in/support/faq/why-cant-i-hear-the-game-audio-on-recentral-4-and-recording-video-clip-oJ2Go2vZ-pdbwqKzM
 
 If Stereo + Test Output still yields very low readings, test the same HDMI source using the alternative **HDMI (GC553Pro)** recording device exposed through DirectSound (index 9 on the initial test PC) or WDM-KS (index 28). **Device indices are system-specific**; check `audio-devices` each time. The 48 kHz probe may be unavailable on some 44.1 kHz endpoints. Avoid the entries labeled `Not To Use` and do not capture a microphone.
+
+
+## No Windows "Listen to this device" needed — direct in-app relay
+
+This revision fixes a PortAudio routing incompatibility identified on the test PC:
+
+- AVerMedia HDMI input **#14**, Windows WASAPI at **48,000 Hz**
+- Default TOPPING USB DAC output **#5**, Windows MME at **44,100 Hz**
+
+PortAudio requires all devices within one duplex stream to share a host API. SwitchAutoPresence now opens separate input/output streams where APIs or sample rates differ, and uses a bounded in-memory converter to resample HDMI 48 kHz audio to the default 44.1 kHz playback device. This does **not** change your Windows default output or use Windows "Listen to this device."
+
+**Test:**
+
+1. In Windows Recording device properties, disable **Listen to this device** for the GC553Pro HDMI input to prevent duplicates.
+2. Ensure the Switch 2 is outputting **Stereo** and has an audible game running.
+3. Start SwitchAutoPresence in **Automatic** mode with capture device 1.
+4. Enter **14** as the AVerMedia HDMI audio input; **leave output index blank** to use the default TOPPING DAC.
+5. Click **Start audio monitor**. The controller should say **separate** and show **48000→44100 Hz**, plus HDMI input RMS/peak levels.
+6. Verify you actually hear the game in your default headphones/speakers. Only after this succeeds should you try Discord application sharing with **Share audio** enabled and ask a remote viewer to confirm the sound.
+
+The audio diagnostic \`audio-test --input N --seconds 8\` now uses each device's default capture sample rate. So #14 uses 48 kHz, while the alternate **HDMI input #9 (DirectSound)** uses 44.1 kHz. If #14 stays around -66 dBFS, try #9 while a game is producing continuous sound. This will help distinguish device-selection/input-volume issues from output routing.
+
+Input and output streams are decoupled with ~70 ms target buffer and a 400 ms maximum capacity. Any periodic clicking, stutter or sync drift still needs hardware testing and follow-up optimization; don't present it as finished or guaranteed.
