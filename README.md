@@ -1,107 +1,252 @@
 # SwitchAutoPresence 🎮
 
-**Automatically detect Nintendo Switch and Nintendo Switch 2 games through a capture feed and display them in Discord Rich Presence — with manual game selection when you want it.**
+An **unofficial Windows utility** for sharing Nintendo Switch and Switch 2 games on Discord with **automatic game recognition** or **persistent manual game selection**.
 
-> **Status: pre-alpha.** This repository currently has a **Phase 1 capture diagnostic**. Game recognition, window capture, manual selection, and Discord integration are **planned, not implemented**.
-
-SwitchAutoPresence is an unofficial, free, locally running Windows project. No Nintendo account login or console modifications are planned.
-
-## Planned modes: automatic + manual
-
-| Mode | Expected behavior |
-| --- | --- |
-| **Automatic** (default) | Sample frames from the existing video viewer, recognize the Switch HOME screen, confirm the running title, and update Discord. |
-| **Manual** | Search/select a Nintendo Switch or Switch 2 title and show that title on Discord, even if there is no capture feed. Manual mode **locks the selected title** until the user returns to Automatic mode or clears activity. |
-| **Clear activity** | Remove the app's Discord activity until the user explicitly selects a game or resumes Automatic mode. |
-
-**Priority:** Manual selection always wins over automatic recognition. Detection must never silently overwrite a manual game. Switching back to Automatic releases that override; if recognition is uncertain, show an unknown/unset state instead of claiming the wrong game. A future tray UI should clearly show the current mode, game, and detection confidence.
-
-This makes the app useful for people **without a capture card** too: they can use manual mode as a basic Switch Discord presence application.
-
-## Capture architecture
-
-**Nintendo Switch / Switch 2 → AVerMedia capture card → VideoGameCapture viewer → local window-frame sampling → game recognition → Discord Rich Presence**
-
-We should **not open the capture card a second time** while VideoGameCapture/Discord uses it. A real Windows test with the AVerMedia Live Gamer ULTRA S (GC553Pro) returned `Status: unavailable` when another viewer was active; exclusive capture access is the leading explanation, though exact driver behavior still needs validation.
-
-In that same setup, **only Discord's small self-preview pauses to save resources; the VideoGameCapture window itself continues rendering**. Therefore, the next experiment is sampling occasional frames from the **VideoGameCapture window**, rather than opening the hardware again.
-
-Window capture must be tested for occluded, minimized, or off-screen windows. If the viewer stops rendering when minimized, we should provide a supported fallback (for example, a shared video pipeline) rather than claiming invisible capture always works.
-
-### Detection rules
-
-- A game being **highlighted** on HOME does not prove it has launched.
-- Confirm launch/transitions before changing activity.
-- Require consistent observations, avoid oscillating statuses, and preserve the last confirmed title when gameplay replaces HOME.
-- Never infer a game solely from a stale or frozen frame.
-- Do not collect or upload gameplay frames or personal footage to a remote service.
-- Unknown titles can be selected manually, with a local game catalog and room for custom entries.
+> **v0.3 pre-alpha / Windows hardware validation pending.** The application owns a single capture-card video stream, displays an optional streamable preview window, inspects the same frames for HOME-menu titles, and updates Discord Rich Presence. It is not a production-quality streamer, and audio sharing is **experimental**.
 
 
+## Recommended: Discord Direct mode (smooth native capture)
 
-### HOME screen recognition and Discord activity
+The GC553Pro on one Windows PC delivers near-60-FPS video **when Discord captures the AVerMedia directly**, while the experimental Tkinter preview window was measured around 39 FPS. Discord viewers already receive HDMI game audio with direct capture; the missing piece was local playback through headphones.
 
-The Switch HOME menu displays the **highlighted game's full title above its tile** (for example, `The Legend of Zelda: Ocarina of Time`). Automatic detection should start by cropping that title area from frames captured from the **VideoGameCapture window** and reading it with offline OCR, optionally verifying a title against the tile artwork.
+**Use Discord Direct rather than the app's own stream window for this workflow.**
 
-**Do not mistake the highlighted tile for the game currently running.** Store it as a *candidate* until a launch transition is confirmed. If the console is on HOME, Discord should **still show Nintendo Switch as the activity**, with a generic Switch image and details like `Browsing HOME`. Never display `Playing <title>` merely because its tile is selected.
+1. Run `switchautopresence app --device 1 --discord-direct` (or click **Discord direct** in the UI). This releases SwitchAutoPresence's **video** capture handle; the app continues to receive **audio** from the AVerMedia HDMI recording endpoint and plays it through your Windows default output.
+2. In Discord, select/capture the **AVerMedia Live Gamer ULTRA S GC553Pro directly**, as you did before. The Discord viewers should receive full-speed video and the card's own audio. Avoid trying to open the same video feed with SwitchAutoPresence at the same time.
+3. Leave **Windows Listen to this device disabled**. SwitchAutoPresence automatically finds and opens HDMI audio for your headphones. The **Mute / Unmute** button silences the app's playback. If you want game-specific Rich Presence, choose **Set manual game** (and configure a Discord Developer Application ID); that does **not** stop local HDMI audio.
+4. Click **Minimize to tray**. The control panel disappears; the capture-card audio relay and Discord Presence keep running. Right-click the SwitchAutoPresence tray icon to **Open**, **Mute / Unmute** or **Exit**. Windows may put the icon behind the system tray's overflow arrow.
+5. Your mode is saved, so restarting the app in Discord Direct or Manual mode **does not automatically open** the capture-card video handle.
 
-### Discord artwork
+**Trade-off:** automatic visual game detection is unavailable in Discord Direct mode. The app cannot read frames from a capture card while Discord owns that video source without a shared-feed architecture. Use manual game selection, or switch to Automatic mode and the app's own stream window when visual recognition matters more than smooth native capture. Switching to Automatic **while Discord is capturing the card directly** may fail or interrupt its video access.
 
-Use the Discord application identity **Nintendo Switch** for both modes. Its Rich Presence **large image** should change with the confirmed game, with an optional **small Nintendo Switch icon** overlay. In manual mode use the manually selected game's art, regardless of what the video recognizer sees.
+The HDMI **audio** endpoint is separate from video, but driver policies vary: simultaneous Discord direct capture and local HDMI audio monitoring still require testing on the actual PC. Successful audio monitoring with the app's own video source does **not by itself** prove simultaneous audio access when Discord owns video.
 
-| Observation | Discord activity name | Details | Large image |
-| --- | --- | --- | --- |
-| HOME menu visible | Nintendo Switch | Browsing HOME | Generic Switch artwork |
-| Game launch confirmed | Nintendo Switch | Playing [confirmed title] | Game cover/icon |
-| Unknown active game | Nintendo Switch | Game not recognized | Generic Switch artwork |
-| Manual game chosen | Nintendo Switch | Playing [selected title] | Selected game's cover/icon |
-| Console off / signal lost in AUTO | Clear after a reasonable grace period | — | — |
+### Stream-window and tray controls
 
-The image source should come from a **licensed/approved asset catalog**, or a valid publicly accessible URL when permitted; use the generic Switch image if a game has no safe art source. Do not dump copyrighted game cover artwork into the public GitHub repository without permission. Discord supports uploaded Rich Presence art assets and publicly accessible external URLs, subject to the specific RPC/SDK integration and valid image requirements. Images should not require uploading captured gameplay.
+When you do use SwitchAutoPresence's own video stream, **Start stream source** opens the capture window **in the foreground** for Discord's application picker. After you select it, the window can be covered (but not minimized), and it isn't permanently always-on-top. **Minimize to tray** hides only the control panel, not this stream source, so Discord's window capture can continue.
 
-## Phase 1: Capture diagnostics
 
-Requires Windows 10/11 and Python 3.10+.
+## Agreed development direction
 
-~~~powershell
-git clone https://github.com/gituser6178/SwitchAutoPresence.git
-cd SwitchAutoPresence
-git switch feat/phase1-capture-diagnostics
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[windows]"
-.\.venv\Scripts\python.exe -m switchautopresence devices
-.\.venv\Scripts\python.exe -m switchautopresence probe --device 1 --seconds 8
+**Streaming reliability comes first:** measured 60 FPS preview and confirmed HDMI audio in Discord, then working manual Discord Presence with artwork. Automatic recognition remains useful but must not block a release.
+
+For automatic detection, the next design uses a **local image reference library** to recognize the selected game tile **on HOME only** (not arbitrary gameplay), with OCR as a fallback. It remembers the last confirmed active game through loading/cutscene frames. A highlighted HOME tile is *not* treated as playing, and a HOME return cannot reliably distinguish suspension from closing the game.
+
+Users can add locally captured/owned tile references through a proposed **Add Game Image** flow; the public repository will not redistribute copyrighted game covers.
+
+**This is a locked design decision, not yet a completed feature.** The current v0.3 build still uses experimental HOME OCR and a heuristic launch detector. See [Product direction and acceptance tests](docs/PRODUCT_DIRECTION.md).
+
+## How it works
+
+~~~text
+Nintendo Switch 2
+        |
+        v
+AVerMedia GC553Pro (one video reader / one handle)
+        |
+        v
+SwitchAutoPresence
+        |--> Live preview window --> Discord "Share an application"
+        |--> Low-frequency HOME OCR --> confirmed game --> Discord Rich Presence
+        |
+        +--> Manual mode (releases card; direct Discord capture may resume)
 ~~~
 
-**Replace 1 with your own device index.** The diagnostic does not save images, video, or audio; it reports aggregate frame statistics only. It does not connect to Discord.
+**You do NOT need VideoGameCapture, OBS, or another viewer.** Only one application should open the AVerMedia video feed at a time.
 
-See the **[Phase 1 testing guide](docs/PHASE1_TESTING.md)** for the reproducible test procedure.
+### Automatic mode
 
-### Hardware findings (one initial Windows setup)
+1. Stop Discord **directly capturing the AVerMedia** (it would compete for the card).
+2. Start SwitchAutoPresence with the correct video device index, e.g. **1** on the original test PC.
+3. Click **Start stream source**. The controller **stops drawing its duplicate preview** and releases its image buffer; the stream window is started **behind other windows**, instead of popping in front of your desktop.
+4. In Discord's **Share Your Screen → Applications**, select **SwitchAutoPresence Stream**, not the AVerMedia video device. If it doesn't appear, press **Show stream for Discord picker** to bring it forward temporarily. After selection, cover it with other windows as usual.
+5. The same in-memory video frames are periodically analyzed for the Switch HOME menu; game selection on HOME is only a **candidate**, not confirmed gameplay.
+6. HOME shows **Nintendo Switch — Browsing HOME** with generic artwork; likely gameplay shows the previously selected title after several consistent non-HOME frames.
 
-- Nintendo Switch 2 and **AVerMedia Live Gamer ULTRA S (GC553Pro)** detected as capture device index 1.
-- DirectShow probe when used alone: **426 frames in 8.01 seconds, no read errors, 640×480 negotiated resolution, ~53.2 observed FPS**.
-- The same probe while the existing streaming/capture application was active returned **unavailable**.
-- Discord's *self-preview* pauses for resource savings; the independent **VideoGameCapture window is still live**.
+The initial HOME detector uses image-layout heuristics and offline RapidOCR. **It's experimental.** Gameplay launch can be misclassified if the HOME screen is obscured or you open another app. A fresh launch transition is required; starting in the middle of a game displays a generic Switch activity until a title can be confirmed.
 
-These are **observations from one system**, not broad hardware guarantees. The detected resolution is not necessarily the console's output resolution.
 
-## Roadmap
+### Background Discord streaming (control preview disabled)
 
-- [x] Phase 1 diagnostic CLI, device enumeration and automated unit tests
-- [x] Confirm initial GC553Pro direct-capture success and failure alongside the existing viewer
-- [ ] Phase 1B: read frames from the VideoGameCapture **window** without opening the capture device
-- [ ] Test minimized/occluded windows, Discord streaming, viewer compatibility and CPU usage
-- [ ] Phase 2: OCR the HOME title strip, retain selected candidate, confirm actual launch and keep a generic Nintendo Switch activity while browsing HOME
-- [ ] Phase 3: Discord Rich Presence with per-game large artwork, small Nintendo Switch icon, fallback art, and **manual/automatic mode selection with explicit override behavior**
-- [ ] Phase 4: Windows tray app, settings, packaging and optional community title catalog
+Once **Start stream source** has been clicked:
 
-## Privacy
+- The **main control-panel preview is completely disabled**; no second video resizing, conversion or image allocation occurs until the stream window is closed.
+- The independent **SwitchAutoPresence Stream** window remains mapped and keeps accepting the latest capture frames even if other normal windows cover it. It is lowered to the background when created rather than forced to the foreground.
+- It **does not need to stay on top** to be streamable through Windows Graphics Capture, where supported. Select the **Application** window inside Discord, not the entire desktop.
+- **Do not minimize or hide** the source window. A truly invisible/minimized HWND may disappear from Discord's application picker or stop updating. This release deliberately does **not** use `withdraw`, `iconify`, transparency, or other tricks that would risk freezing the feed.
+- Use **Show stream for Discord picker** if it isn't selectable initially. You can then cover it again with other windows; the background rendering continues. Close the stream window to restore the control-panel preview.
+- Discord and Windows have multiple window-capture methods; the user must verify actual occluded-window streaming on their own system. A future completely **headless** source would require a separate virtual capture or display backend, not a normally hidden app window.
 
-Recognition should run locally. This Phase 1 tool does not transmit or save captured gameplay. Do not commit game footage, screenshots, Nintendo credentials, or Discord user tokens.
+**Sound:** The existing in-process HDMI audio relay continues independently of either preview; opening or closing the stream window doesn't enable/disable the audio monitor.
 
-## License
+### Manual mode
 
-Code is released under the [MIT License](LICENSE). Nintendo game art, third-party assets and metadata have their own licensing requirements; MIT does not grant rights to those.
+Choose/type a game and click **Set manual game**. Your selection has priority and stays locked until you choose **Start automatic capture** or **Clear activity**.
 
-SwitchAutoPresence is **not affiliated with or endorsed by Nintendo, Discord, or AVerMedia**.
+Manual mode **releases the capture card**, allowing you to stream directly from your AVerMedia in Discord. It works even without an attached console. You can enter a permitted HTTPS game artwork URL or Discord image asset key for each game. The selection and artwork mapping are stored locally in Windows AppData.
+
+### Audio: experimental, OFF by default
+
+OpenCV captures **video only**. For sound, v0.3 includes optional in-process monitoring of the **AVerMedia HDMI audio input** to your default Windows audio output. If Discord captures the shared application's output audio, your audience may hear it as well. **This is NOT yet verified on the GC553Pro with Discord.**
+
+- Run `audio-devices` to find the exact AVerMedia HDMI audio input index.
+- In Automatic mode, the app **automatically detects and opens** the AVerMedia HDMI audio input. Use the recording-device dropdown only if you need a different input.
+- Do **not** select your microphone: doing so can create feedback.
+- Check Discord's **Share audio** option when sharing the stream window. Listen through headphones if needed.
+- The **Mute / Unmute** button silences output for both your headphones and any Discord application-audio share without releasing the audio input. If you hear feedback or doubled audio, disable Windows **Listen to this device**.
+
+Do not consider the streaming pipeline fully validated until video **and** audio are tested.
+
+
+### Audio relay to your default Windows output (no "Listen to this device")
+
+**No Windows Listen checkbox is required.** SwitchAutoPresence can now read HDMI audio from AVerMedia using Windows WASAPI and play it through your default Windows output, including a different host API or sample rate. The input and output are separate PortAudio streams connected by an in-memory, bounded resampling buffer. The input is never sent to cloud services or saved as a recording.
+
+On the initial tester's PC, **HDMI audio input #14 = 48 kHz WASAPI** and the **default TOPPING USB DAC output #5 = 44.1 kHz MME**. This is now handled by the separate-stream route; previously a single duplex stream could not connect those two host APIs.
+
+1. **Disable** Windows Sound → Recording → AVerMedia HDMI → Properties → **Listen to this device** before starting the app. Otherwise you will hear doubled audio.
+2. Launch \`.\.venv\Scripts\python.exe -m switchautopresence app --device 1\` and use Automatic mode (the capture card must be free of Discord direct capture).
+3. Audio starts **automatically** when the application enters Automatic mode. The best available AVerMedia HDMI input is selected, with playback routed to your default TOPPING DAC. Use the dropdowns to override devices, **Rescan** after hot-plugging, or **Mute / Unmute** playback.
+4. The audio meter should report **separate**, **48000→44100 Hz**, and **output #5** while playing the game through your default speakers/headphones.
+5. Check audio locally first, then enable **Share audio** when screen-sharing the **SwitchAutoPresence Stream** application in Discord; verify with a remote listener.
+
+**Important:** the actual measured HDMI input #14 previously reported approximately -66.5 dBFS average. This routing fix cannot turn a genuinely quiet or incorrect input into loud game audio. If the meter remains nearly silent, stop the monitor, run the \`audio-test\` command against the alternate **HDMI input #9 (DirectSound)** and compare levels. The probe now uses the selected recording device's *native* sample rate (44.1 kHz for #9, 48 kHz for #14). Do not use any "Not To Use" endpoint or a microphone.
+
+This is experimental until audio output and synchronization are verified on Windows with Discord. The buffer targets a modest latency and may underrun or drift on incompatible drivers; report warnings and actual results.
+
+
+## Audio input test (recommended before Discord streaming)
+
+**We now have a read-only HDMI-audio diagnostic.** First run `audio-devices` to find the GC553Pro's Windows recording endpoint and the default playback device. Then close the app, play an audible Switch game, and run `audio-test` with the selected input index:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence audio-devices
+.\.venv\Scripts\python.exe -m switchautopresence audio-test --input N --seconds 8
+~~~
+
+Replace `N` with the correct **AVerMedia recording input index**, not your video device index (the indices may differ). The test reports RMS/peak levels without playing or saving audio.
+
+You no longer need to run the audio-test command before using the app. **Automatic audio detection and playback start on launch** when Automatic mode is active. The GUI shows the selected HDMI input, audio levels and a **Mute / Unmute** control; device dropdowns and Rescan provide manual recovery if needed. The default playback output is used unless you choose otherwise. Discord audio sharing was successfully confirmed by a user, but sustained synchronization still needs measurement.
+
+**A successful audio level test does not prove Discord viewers hear it.** Only a remote listener can confirm sound and synchronization. See [audio testing guide](docs/AUDIO_TESTING.md) for the three-step verification and troubleshooting.
+
+## Installation (Windows 10/11)
+
+You need Python 3.10+ and an existing SwitchAutoPresence clone. If you already cloned the earlier build:
+
+~~~powershell
+git fetch origin
+git switch feat/phase2-auto-manual-presence
+git pull --ff-only origin feat/phase2-auto-manual-presence
+.\.venv\Scripts\python.exe -m pip install --upgrade -e ".[all]"
+.\.venv\Scripts\python.exe -m switchautopresence --help
+~~~
+
+**OpenCV installation note:** The OpenCV project says `opencv-python` and `opencv-python-headless` should NOT coexist. Some dependency combinations may install both. If `cv2` import breaks or both variants appear, after installing requirements run:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m pip uninstall -y opencv-python opencv-python-headless
+.\.venv\Scripts\python.exe -m pip install --no-deps --force-reinstall "opencv-python>=4.8,<5"
+.\.venv\Scripts\python.exe -c "import cv2; print(cv2.__version__)"
+~~~
+
+This repair operates **only inside the project virtual environment**. The project uses Pillow/Tkinter for previews, so we can use a single OpenCV package.
+
+## First video test
+
+Find the AVerMedia index:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence devices
+~~~
+
+Close Discord's direct capture of that device, then start the application:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence app --device 1 --width 1920 --height 1080 --fps 60
+~~~
+
+The `--device 1` value was correct in one initial GC553Pro test; yours may differ. If no video appears, try **1280×720 @ 60** from the UI or the alternate `--backend msmf` option. Actual negotiated frame size and FPS are displayed by the UI. The app will retry the driver's default format once if the requested format produces no frames.
+
+Use **Start stream source** in the UI and share that application window on Discord. **Do not close the app while it is being streamed**.
+
+To test HOME recognition without a Discord Application ID, close the app and run:
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence scan-device --device 1 --seconds 12
+~~~
+
+Navigate to Switch HOME and highlight a recognizable game while this command runs. Report the output; no screenshots or recorded video are saved.
+
+## Discord Rich Presence
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications), create a Rich Presence application, ideally named **Nintendo Switch**.
+2. Copy its **Application ID** (public, not an account token).
+3. Run the app with `--app-id YOUR_APPLICATION_ID` and keep Discord desktop open.
+
+~~~powershell
+.\.venv\Scripts\python.exe -m switchautopresence app --device 1 --app-id YOUR_APPLICATION_ID
+~~~
+
+Discord should display **Nintendo Switch** with game details and session time. For game art, add a permitted HTTPS image URL or upload assets in your Developer Application; otherwise Discord may show the app's default icon. No game covers are copied into this repository.
+
+Without `--app-id` the app runs in **dry-run mode**: gameplay preview and manual/automatic controls still work, but Discord Rich Presence does not change.
+
+## Commands
+
+| Command | Use |
+| --- | --- |
+| `devices` | List DirectShow video devices |
+| `app --device 1` | Launch controller and single-owner preview |
+| `scan-device --device 1` | Offline OCR while owning the capture card |
+| `audio-devices` | Find the HDMI audio capture endpoint |
+| `probe --device 1` | Original Phase 1 diagnostic (only when device is free) |
+| `windows`, `probe-window`, `scan-window` | Optional legacy external-viewer tests; not required |
+
+See [Phase 3 testing guide](docs/PHASE3_SINGLE_CAPTURE_TESTING.md) for a complete checklist.
+
+## Known limitations
+
+- The Tkinter video-only window renders at up to **60 FPS** (rendering target, not a guaranteed frame rate); this is a functional preview, **not yet a validated 60 FPS streaming renderer**. HDMI passthrough on the AVerMedia is not affected.
+- Full-speed capture decode and per-frame Tkinter image drawing may use CPU. OCR is sampled infrequently rather than processed on every frame.
+- The GC553Pro hardware probe succeeded alone (426 frames / 8 sec, no read errors), and failed while another app used its video feed. The integrated preview has **not yet been hardware-tested**.
+- The capture device must be free when Automatic mode starts. Manual mode relinquishes it.
+- Voice/audio monitoring and Discord application audio capture must be tested; the implementation is not a guarantee of working sound.
+- The HOME title recognizer is heuristic. Unknown games use generic artwork. It does not recognize arbitrary gameplay scenes.
+- This is a Windows developer prototype, not a packaged installer or system-tray release.
+
+## Privacy and license
+
+The app runs locally by default. No video or audio is saved or uploaded by this code. The only intended network-facing presence action is Discord's IPC client, which publishes game title/details/artwork you configure. Do not include personal screenshots, secrets, tokens, or unlicensed game covers in PRs.
+
+Code is **MIT-licensed**. Nintendo, Discord, and AVerMedia are unaffiliated with and do not endorse this project. Game trademarks and third-party artwork belong to their respective owners.
+
+### 60 FPS and HOME OCR diagnostics
+
+- The dedicated stream window now targets a frame refresh every **16 ms** (roughly 60 FPS), but Tkinter/Pillow can be slower. The controller displays measured capture FPS and measured stream-window FPS; neither is guaranteed.
+- HOME title candidates survive up to **three consecutive OCR misses** (about 6 seconds at default sampling), to avoid losing a recognized title immediately before a launch. Repeated misses still expire the title to avoid falsely identifying another game.
+- When recognition fails, the controller shows the **last HOME OCR text** and candidate title. If the candidate remains `none`, `scan-device` can help tune the OCR region.
+- The project now uses **opencv-python 4.x** as its sole OpenCV dependency. If you previously installed both OpenCV variants in the virtual environment, uninstall both and reinstall `.[all]` once.
+- Audio is still **experimental**: choose the AVerMedia HDMI audio endpoint and confirm a remote Discord listener hears the sound when application audio sharing is enabled.
+
+### Improved HOME title recognition
+
+- Recognition now isolates the Switch 2's cyan game-title line and tries recognition-only OCR before default OCR.
+- Neutral-gray game loading frames are no longer automatically classified as HOME without title evidence.
+- Two consecutive HOME observations are required before interrupting active gameplay.
+- The scan-device command reports OCR method (cyan_line, normal_ocr, cyan_title_unreadable, neutral_without_title), recognized text and matched game.
+- If a title remains unknown, run scan-device while highlighting Zelda on HOME and share its text output. Do not upload captured gameplay.
+
+### Automatic audio and mute (current build)
+
+On Windows the app now discovers the capture-card HDMI audio endpoint itself, preferring **AVerMedia HDMI / Windows WASAPI** and remembering a successful device by name and API even if Windows renumbers it. The audio relay connects automatically when Automatic mode starts. It does **not** auto-select your microphone or any endpoint marked `Not To Use`.
+
+There is no Start Audio Monitor button. You can change the **Recording input** or **Playback output** dropdown and the route restarts automatically; **Rescan** refreshes connected device choices. The **Mute** button silences local output and Discord's application audio without closing the HDMI stream; **Unmute** restores it. Manual game mode deliberately releases the capture card for direct Discord capture, so the app's automatic audio route is used in Automatic mode.
+
+The duplicate control-panel preview widget is **destroyed** while the stream source is open. Closing that stream window recreates the control-panel preview. The source window remains mapped/unminimized behind other applications so Discord may capture it; a truly invisible capture source requires another backend.
+
+### Stream-window frame pacing update
+
+A GC553Pro hardware screenshot showed **59.8 FPS capture** but only **37.9 FPS stream rendering**. The renderer used to wait 16ms *after* each Tkinter image resize and copy, wasting most of its 60fps frame budget. The GUI now schedules against the frame's **start time**, uses efficient linear downscaling and reuses a Tk image object when window dimensions are unchanged.
+
+The controller now displays actual **capture FPS**, **stream-window FPS**, and **average image-render duration in ms**. Continue testing while Discord shares the unminimized stream source. A 60fps target is not a performance guarantee; if 1080p/720p still fails, a GPU-backed renderer is a stronger next step than arbitrarily requesting a higher capture rate.
