@@ -32,7 +32,11 @@ def make_parser() -> argparse.ArgumentParser:
     probe.add_argument("--seconds", type=float, default=8.0)
     probe.add_argument("--json", action="store_true")
 
-    sub.add_parser("audio-devices", help="List Windows audio capture endpoints")
+    sub.add_parser("audio-devices", help="List HDMI recording inputs and Windows playback endpoints")
+    meter = sub.add_parser("audio-test", help="Measure input audio level; no playback, saving or recording")
+    meter.add_argument("--input", type=int, required=True, help="Audio device index from audio-devices")
+    meter.add_argument("--seconds", type=float, default=8.0, help="Duration, 1-30 seconds")
+    meter.add_argument("--json", action="store_true", help="Machine-readable result")
     sub.add_parser("windows", help="[Optional] List app windows for viewer-based diagnostics")
     wp = sub.add_parser("probe-window", help="[Optional] Test an already-open external video viewer window")
     wp.add_argument("--window", default="VideoGameCapture")
@@ -88,13 +92,51 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "audio-devices":
         try:
-            from .audio_monitor import list_audio_inputs
-            for index, name, channels in list_audio_inputs():
-                print(f"[{index}] {name} ({channels} input channels)")
-            print("Choose the AVerMedia HDMI audio input, NOT your microphone.")
+            from .audio_monitor import describe_audio_devices
+            devices = describe_audio_devices()
+            print("Recording inputs (choose only AVerMedia HDMI audio, not a microphone):")
+            for d in devices:
+                if d.input_channels:
+                    marker = " [default input]" if d.default_input else ""
+                    print(f"[{d.index}] {d.name} | {d.hostapi} | in={d.input_channels} "
+                          f"| default={d.default_samplerate} Hz{marker}")
+            print("Playback outputs (optional selection; use your headphones/speakers):")
+            for d in devices:
+                if d.output_channels:
+                    marker = " [default output]" if d.default_output else ""
+                    print(f"[{d.index}] {d.name} | {d.hostapi} | out={d.output_channels} "
+                          f"| default={d.default_samplerate} Hz{marker}")
             return 0
         except Exception as exc:
-            print(f"Cannot list audio inputs: {exc}", file=sys.stderr)
+            print(f"Cannot enumerate audio devices: {exc}", file=sys.stderr)
+            return 2
+
+    if args.command == "audio-test":
+        if args.input < 0 or not 1 <= args.seconds <= 30:
+            parser.error("--input must be >= 0 and --seconds must be between 1 and 30")
+        try:
+            from .audio_monitor import probe_audio_input
+            result = probe_audio_input(args.input, seconds=args.seconds)
+            if args.json:
+                print(json.dumps(result, indent=2))
+            else:
+                print(f"Input: [{result['input_device']}] {result['device_name']}")
+                print(f"Status: {result['status']} | {result['channels']} channels | "
+                      f"{result['samplerate']} Hz | {result['seconds']:.1f} seconds")
+                print(f"RMS: {result['rms_dbfs']:.1f} dBFS | "
+                      f"Peak: {result['peak_dbfs']:.1f} dBFS | "
+                      f"Blocks: {result['blocks']}")
+                if result["status"] == "silent":
+                    print("No meaningful audio detected. Play Switch game sounds, "
+                          "check HDMI volume, or try a different AVerMedia input index.")
+                else:
+                    print("Input detected. Next enable audio monitoring inside "
+                          "SwitchAutoPresence, then test Discord's Share audio with a listener.")
+                for warning in result["warnings"]:
+                    print("Audio warning:", warning)
+            return 0 if result["status"] == "signal" else 1
+        except Exception as exc:
+            print(f"Audio test failed: {exc}", file=sys.stderr)
             return 2
 
     if args.command == "probe":
