@@ -161,3 +161,24 @@ def test_audio_bridge_refuses_bad_settings():
         AudioBridge(input_rate=48000, output_rate=44100, channels=3)
     with pytest.raises(ValueError):
         AudioBridge(input_rate=48000, output_rate=44100, latency_ms=800, max_latency_ms=700)
+
+
+def test_probe_uses_audio_device_native_default_rate():
+    from switchautopresence.audio_monitor import probe_audio_input
+    class Native44:
+        def __init__(self):
+            self.kwargs = None
+        def query_devices(self, index, mode):
+            return {"name": "AVerMedia DirectSound", "default_samplerate": 44100,
+                    "max_input_channels": 2}
+        def InputStream(self, **kwargs):
+            self.kwargs = kwargs
+            class S:
+                def start(self): pass
+                def stop(self): pass
+                def close(self): pass
+            return S()
+    backend = Native44()
+    result = probe_audio_input(9, seconds=1, backend=backend, wait=lambda _: None)
+    assert result["samplerate"] == 44100
+    assert backend.kwargs["samplerate"] == 44100
