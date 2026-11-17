@@ -115,7 +115,7 @@ class AudioMeter:
 
 
 def probe_audio_input(
-    input_device: int, *, seconds: float = 8.0, samplerate: int = 48000,
+    input_device: int, *, seconds: float = 8.0, samplerate: int | None = None,
     backend=None, wait=None,
 ) -> dict:
     """Measure audio arriving from one input; does NOT play, record or save.
@@ -128,6 +128,10 @@ def probe_audio_input(
         raise ValueError("Audio test duration must be 1–30 seconds")
     sd = _backend(backend)
     info = sd.query_devices(input_device, "input")
+    if samplerate is None:
+        samplerate = int(round(float(info.get("default_samplerate") or 48000)))
+    if not 8000 <= samplerate <= 192000:
+        raise ValueError("Audio sample rate must be 8000–192000 Hz")
     channels = min(2, int(info["max_input_channels"]))
     if channels < 1:
         raise ValueError("Selected device has no input channels")
