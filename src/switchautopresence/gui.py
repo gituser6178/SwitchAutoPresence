@@ -52,8 +52,10 @@ def run_gui(runtime):
     stream_label = [None]
     last_preview_sequence = [-1]
     last_stream_sequence = [-1]
-    render_tick = [0]
     stream_stats = {"start": monotonic(), "frames": 0, "fps": 0.0}
+    # A Discord window capture must remain a normal/unminimized OS window.
+    # Opening it behind other apps keeps it capturable without making it topmost.
+    inline_preview_active = [True]
 
     def enable_auto():
         try:
@@ -99,31 +101,82 @@ def run_gui(runtime):
     ttk.Button(actions, text="Set manual game", command=set_manual).pack(side="left", padx=(0, 8))
     ttk.Button(actions, text="Clear activity", command=runtime.clear).pack(side="left")
 
+    def pause_inline_preview():
+        """Release the control-panel image and skip all further video rendering."""
+        inline_preview_active[0] = False
+        last_preview_sequence[0] = -1
+        preview.configure(image="", text="Control preview disabled while streaming")
+        preview.image = None
+        # Reclaim the large image area; controls and HDMI audio stay active.
+        preview.pack_forget()
+
+    def resume_inline_preview():
+        inline_preview_active[0] = True
+        last_preview_sequence[0] = -1
+        if not preview.winfo_manager():
+            preview.pack(fill="both", expand=True, before=controls)
+        preview.configure(image="", text="Video preview: waiting for capture")
+        preview.image = None
+
     def close_stream_window():
-        if stream_window[0] is not None:
-            w = stream_window[0]
-            stream_window[0] = None
-            stream_label[0] = None
-            try:
-                w.destroy()
-            except tk.TclError:
-                pass
+        w = stream_window[0]
+        if w is None:
+            return
+        stream_window[0], stream_label[0] = None, None
+        last_stream_sequence[0] = -1
+        try:
+            w.destroy()
+        except tk.TclError:
+            pass
+        resume_inline_preview()
+
+    def show_stream_for_selection():
+        """Temporary manual recovery when Discord's picker needs a foreground window."""
+        win = stream_window[0]
+        if win is not None:
+            win.deiconify()
+            win.lift()
+            win.focus_set()
+
+    def send_stream_to_background():
+        win = stream_window[0]
+        if win is None:
+            return
+        # Do not withdraw(), iconify(), or set alpha=0: those can make the
+        # HWND disappear from Discord or stop WGC frame delivery.
+        try:
+            if win.state() == "normal":
+                win.lower()
+        except tk.TclError:
+            pass
 
     def open_stream_window():
         if stream_window[0] is not None:
-            stream_window[0].lift()
+            send_stream_to_background()
             return
         win = tk.Toplevel(root)
-        win.title("SwitchAutoPresence Stream — share this window in Discord")
+        win.withdraw()  # Configure completely before mapping.
+        win.title("SwitchAutoPresence Stream")
         win.geometry("1280x720")
         win.minsize(640, 360)
+        win.attributes("-topmost", False)
         label = tk.Label(win, bg="#05070b", fg="white", text="Waiting for Switch video...")
         label.pack(fill="both", expand=True)
         stream_window[0], stream_label[0] = win, label
         last_stream_sequence[0] = -1
+        stream_stats.update(start=monotonic(), frames=0, fps=0.0)
         win.protocol("WM_DELETE_WINDOW", close_stream_window)
+        pause_inline_preview()
+        # It must be mapped (not truly hidden) for Discord window sharing.
+        # Immediately lower it instead of forcing a second video to the front.
+        win.deiconify()
+        root.after_idle(send_stream_to_background)
 
-    ttk.Button(actions, text="Open stream window", command=open_stream_window).pack(side="right")
+    show_stream_button = ttk.Button(
+        actions, text="Show stream for Discord picker", command=show_stream_for_selection
+    )
+    show_stream_button.pack(side="right", padx=(0, 8))
+    ttk.Button(actions, text="Start stream source", command=open_stream_window).pack(side="right")
 
     audio_box = ttk.Frame(body)
     audio_box.pack(fill="x", pady=(4, 2))
@@ -185,26 +238,30 @@ def run_gui(runtime):
     def draw():
         if not root.winfo_exists():
             return
-        render_tick[0] += 1
         packet = runtime.preview_frame()
         if packet is not None:
-            # While streaming, prioritize the dedicated window over the control preview.
-            if (stream_label[0] is None or render_tick[0] % 6 == 0) and packet.sequence != last_preview_sequence[0]:
+            # No second cv2 resize, RGB conversion or PhotoImage allocation
+            # while the dedicated stream window exists.
+            if inline_preview_active[0] and packet.sequence != last_preview_sequence[0]:
                 last_preview_sequence[0] = packet.sequence
                 show_frame(preview, packet, preview.winfo_width(), preview.winfo_height())
-            if stream_label[0] is not None and packet.sequence != last_stream_sequence[0]:
-                last_stream_sequence[0] = packet.sequence
-                show_frame(stream_label[0], packet,
-                           stream_label[0].winfo_width(), stream_label[0].winfo_height())
-                stream_stats["frames"] += 1
-                duration = monotonic() - stream_stats["start"]
-                if duration >= 2.0:
-                    stream_stats["fps"] = stream_stats["frames"] / duration
-                    stream_stats["frames"] = 0
-                    stream_stats["start"] = monotonic()
+            # Tk keeps executing after() and updating PhotoImage when another
+            # application occludes this mapped, non-minimized stream window.
+            win = stream_window[0]
+            if win is not None and stream_label[0] is not None and win.state() == "normal":
+                if packet.sequence != last_stream_sequence[0]:
+                    last_stream_sequence[0] = packet.sequence
+                    show_frame(stream_label[0], packet,
+                               stream_label[0].winfo_width(), stream_label[0].winfo_height())
+                    stream_stats["frames"] += 1
+                    duration = monotonic() - stream_stats["start"]
+                    if duration >= 2.0:
+                        stream_stats["fps"] = stream_stats["frames"] / duration
+                        stream_stats["frames"] = 0
+                        stream_stats["start"] = monotonic()
         else:
             last_preview_sequence[0] = -1
-            if preview.cget("image"):
+            if inline_preview_active[0] and preview.cget("image"):
                 preview.configure(image="", text="Video preview unavailable — use Automatic and choose a device")
                 preview.image = None
             if stream_label[0] is not None:
@@ -222,7 +279,7 @@ def run_gui(runtime):
         capture_fps = s["capture_fps"]
         fps_info = f"capture {capture_fps:.1f} FPS" if capture_fps is not None else "capture FPS unknown"
         if stream_label[0] is not None:
-            fps_info += f", preview {stream_stats['fps']:.1f} FPS"
+            fps_info += f", stream {stream_stats['fps']:.1f} FPS (control preview off)"
         status_var.set(
             f"{s['mode'].upper()} | {s['screen'].replace('_',' ').title()} | {s['details']} "
             f"| {video} | {fps_info}"
@@ -249,7 +306,16 @@ def run_gui(runtime):
         elif s["mode"] == "manual":
             hint_var.set("Manual mode releases video capture: stream directly from AVerMedia in Discord if desired.")
         elif s["mode"] == "auto":
-            if s["screen"] in ("home", "launching", "unknown"):
+            if stream_window[0] is not None:
+                win = stream_window[0]
+                if win.state() != "normal":
+                    hint_var.set("Stream window is minimized/hidden: Discord capture may freeze. "
+                                 "Use 'Show stream for Discord picker' to restore it.")
+                else:
+                    hint_var.set("Stream source stays mapped and renders in the background. "
+                                 "Discord: share 'SwitchAutoPresence Stream' as an APPLICATION, "
+                                 "not the entire screen. Control preview is off.")
+            elif s["screen"] in ("home", "launching", "unknown"):
                 candidate = s["candidate"] or "none"
                 ocr = (s["ocr_text"] or "(OCR returned no text)")[:140]
                 hint_var.set(f"HOME title candidate: {candidate} | OCR: {ocr} | "
