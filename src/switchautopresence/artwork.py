@@ -36,9 +36,10 @@ class ArtworkCatalog:
         self.small = _validate_asset(small)
         self.games = {}
         for game, asset in (games or {}).items():
-            if not isinstance(game, str) or not isinstance(asset, str):
-                raise ValueError("Game art mapping must map game titles to strings")
-            self.games[game.casefold()] = _validate_asset(asset)
+            if not isinstance(game, str) or (asset is not None and not isinstance(asset, str)):
+                raise ValueError("Game art mapping must map game titles to strings or null")
+            if asset:
+                self.games[game.casefold()] = _validate_asset(asset)
 
     @classmethod
     def from_file(cls, path: str | Path | None):
