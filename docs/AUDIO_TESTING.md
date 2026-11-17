@@ -53,12 +53,12 @@ Once the audio-test shows a signal:
 ~~~
 
 - Choose **Automatic** and confirm video preview works.
-- Under **AVerMedia HDMI audio input #**, enter the same number \`N\`.
+- The app automatically discovers an AVerMedia HDMI input and selects it; you can override this using the **Recording input** dropdown.
 - The **Windows playback output #** can be left blank to use your default headphone/speaker output; you can enter the output index if needed.
-- Click **Start audio monitor** and watch its **RMS/peak** numbers. They should change while Switch audio is playing.
+- Audio routing begins automatically in Automatic mode; watch the **RMS/peak** numbers change while Switch audio plays.
 - You should hear the game through your selected Windows playback device. Use headphones to prevent acoustic feedback. Turn the volume down first.
 - If PortAudio rejects the paired input/output devices, note their **host APIs** from \`audio-devices\`. Try an AVerMedia input and playback output on the same compatible host API, or adjust both Windows default formats to 48 kHz.
-- Click **Stop audio monitor** before switching to another device or program.
+- Use **Mute / Unmute** to silence or restore the app's output, or switch the input/output dropdown to reconfigure. Use **Rescan** if you reconnect hardware. No separate Start Audio button is required.
 
 ## Step 4: Verify remote Discord audio
 
@@ -108,9 +108,15 @@ PortAudio requires all devices within one duplex stream to share a host API. Swi
 2. Ensure the Switch 2 is outputting **Stereo** and has an audible game running.
 3. Start SwitchAutoPresence in **Automatic** mode with capture device 1.
 4. Enter **14** as the AVerMedia HDMI audio input; **leave output index blank** to use the default TOPPING DAC.
-5. Click **Start audio monitor**. The controller should say **separate** and show **48000→44100 Hz**, plus HDMI input RMS/peak levels.
+5. Audio should start automatically in Automatic mode. The controller should show the selected HDMI endpoint, the actual conversion rate and live RMS/peak levels. If the TOPPING output was set to 48 kHz, both sides should now report 48 kHz.
 6. Verify you actually hear the game in your default headphones/speakers. Only after this succeeds should you try Discord application sharing with **Share audio** enabled and ask a remote viewer to confirm the sound.
 
 The audio diagnostic \`audio-test --input N --seconds 8\` now uses each device's default capture sample rate. So #14 uses 48 kHz, while the alternate **HDMI input #9 (DirectSound)** uses 44.1 kHz. If #14 stays around -66 dBFS, try #9 while a game is producing continuous sound. This will help distinguish device-selection/input-volume issues from output routing.
 
 Input and output streams are decoupled with ~70 ms target buffer and a 400 ms maximum capacity. Any periodic clicking, stutter or sync drift still needs hardware testing and follow-up optimization; don't present it as finished or guaranteed.
+
+## Current controls: auto-connect and mute
+
+SwitchAutoPresence now automatically chooses a verified **AVerMedia HDMI** input when Automatic mode starts, without requiring audio-devices, audio-test or a Start Audio button. It remembers your successful input by name/host API across app launches, so it can survive changed Windows device indices. **Not To Use** and microphone inputs are never automatically selected. Audio continues through your Windows default output unless manually overridden.
+
+The **Recording input** and **Playback output** dropdowns let you manually choose another device (immediately restarting the route), and **Rescan** enumerates freshly connected USB endpoints. **Mute** silences local/Discord playback but preserves input capture, metering, and the selected endpoint; **Unmute** restores sound. Mute does not affect your systemwide sound settings or Windows Listen checkbox. In Manual game mode the app still releases capture to Discord by design.
