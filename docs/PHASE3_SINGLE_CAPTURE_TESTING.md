@@ -36,9 +36,10 @@ If pip has installed both `opencv-python` and `opencv-python-headless`, uninstal
 ~~~
 
 4. Verify preview shows live Switch video; note the resolution in the status area. If blank/driver negotiation fails, select 1280x720 @ 60 in the UI and press Start automatic capture.
-5. Click **Open stream window**. This second window is a **rendering view**, not a second camera handle.
-6. In Discord desktop, use Share Screen -> **Applications** -> **SwitchAutoPresence Stream**. Do not choose the AVerMedia capture device in Discord.
-7. Confirm the stream stays alive when the app is behind another window. Note that minimized-window sharing and rendering are not guaranteed by every Discord client.
+5. Click **Start stream source**. The control panel hides its own video preview and the stream source starts **behind other windows** (no duplicate image work).
+6. In Discord desktop, use Share Screen -> **Applications** -> **SwitchAutoPresence Stream**. Do not choose the AVerMedia capture device. If the application window isn't listed, click **Show stream for Discord picker** and retry.
+7. After Discord starts sharing, cover the source with another application. The stream should keep advancing as long as the source window remains mapped and **not minimized**. Ask a viewer to verify video and game sound. Do **not** minimize, withdraw or hide the source; that is not a supported Discord window-capture workflow.
+8. Close the stream source window to restore the control-panel preview. Check that the video capture and HDMI audio continue as expected.
 
 ## Game identification test
 
@@ -98,3 +99,11 @@ Some Nintendo Switch 2 HOME screens contain thin cyan text that the default OCR 
 The scan-device diagnostic prints a method and OCR text for each frame. cyan_title_unreadable means the title's color was found but its text could not be read. neutral_without_title means a gray-looking video frame lacked HOME evidence and will not change the game state.
 
 Please provide diagnostic text rather than uploading sensitive footage.
+
+## Background capture vs completely invisible output
+
+Discord supports Windows Graphics Capture for per-application sharing. DWM-backed window capture can keep receiving frames when a window is **occluded by other windows**, provided the application continues to draw. We explicitly continue updating the source stream's Tk PhotoImage while the mapped window is covered and **stop all rendering** in the control-panel preview to save CPU.
+
+A genuine hidden/minimized window is **not** the same as a covered window. Discord may not enumerate it or may freeze the stream. The source must remain open and not minimized, even if you put any other window in front of it.
+
+Use **Show stream for Discord picker** if Discord can't locate the source while it's behind other windows. Don't assume that sending it to the taskbar or making it fully transparent will keep capture alive. An entirely invisible source would need a virtual capture backend and separate validation of how Discord receives its video/audio.
