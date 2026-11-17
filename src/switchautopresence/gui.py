@@ -14,6 +14,8 @@ from time import monotonic
 from PIL import Image, ImageTk
 import cv2
 
+from .preview_policy import RenderTargets
+
 
 def run_gui(runtime):
     root = tk.Tk()
@@ -239,16 +241,20 @@ def run_gui(runtime):
         if not root.winfo_exists():
             return
         packet = runtime.preview_frame()
+        win = stream_window[0]
+        targets = RenderTargets(
+            stream_open=win is not None,
+            stream_window_normal=win is not None and win.state() == "normal",
+        )
         if packet is not None:
             # No second cv2 resize, RGB conversion or PhotoImage allocation
             # while the dedicated stream window exists.
-            if inline_preview_active[0] and packet.sequence != last_preview_sequence[0]:
+            if inline_preview_active[0] and targets.control_preview and packet.sequence != last_preview_sequence[0]:
                 last_preview_sequence[0] = packet.sequence
                 show_frame(preview, packet, preview.winfo_width(), preview.winfo_height())
             # Tk keeps executing after() and updating PhotoImage when another
             # application occludes this mapped, non-minimized stream window.
-            win = stream_window[0]
-            if win is not None and stream_label[0] is not None and win.state() == "normal":
+            if targets.stream_window and stream_label[0] is not None:
                 if packet.sequence != last_stream_sequence[0]:
                     last_stream_sequence[0] = packet.sequence
                     show_frame(stream_label[0], packet,
