@@ -16,8 +16,8 @@ git pull --ff-only origin feat/phase2-auto-manual-presence
 If pip has installed both `opencv-python` and `opencv-python-headless`, uninstall both from the project's .venv and reinstall **only** the pinned headless build:
 
 ~~~powershell
-..venvScriptspython.exe -m pip uninstall -y opencv-python opencv-python-headless
-..venvScriptspython.exe -m pip install --force-reinstall --no-deps "opencv-python-headless>=4.8,<5"
+.\.venv\Scripts\python.exe -m pip uninstall -y opencv-python opencv-python-headless
+.\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps "opencv-python-headless>=4.8,<5"
 ~~~
 
 ## Video test — single owner
@@ -26,13 +26,13 @@ If pip has installed both `opencv-python` and `opencv-python-headless`, uninstal
 2. Find the video index (previous test PC: index 1):
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence devices
+.\.venv\Scripts\python.exe -m switchautopresence devices
 ~~~
 
 3. Launch:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --device 1
+.\.venv\Scripts\python.exe -m switchautopresence app --device 1
 ~~~
 
 4. Verify preview shows live Switch video; note the resolution in the status area. If blank/driver negotiation fails, select 1280x720 @ 60 in the UI and press Start automatic capture.
@@ -49,7 +49,7 @@ If pip has installed both `opencv-python` and `opencv-python-headless`, uninstal
 5. If the app fails to recognize HOME, close it and test the standalone diagnostic:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence scan-device --device 1 --seconds 12
+.\.venv\Scripts\python.exe -m switchautopresence scan-device --device 1 --seconds 12
 ~~~
 
 Record the OCR text and state. On-screen titles may be misread; the classifier may need tuning with anonymized, user-provided test frames.
@@ -69,7 +69,7 @@ Record the OCR text and state. On-screen titles may be misread; the classifier m
 1. List input endpoints:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence audio-devices
+.\.venv\Scripts\python.exe -m switchautopresence audio-devices
 ~~~
 
 2. Choose the **AVerMedia HDMI audio input**, never your normal microphone.
