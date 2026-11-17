@@ -74,7 +74,7 @@ Record the OCR text and state. On-screen titles may be misread; the classifier m
 ~~~
 
 2. Choose the **AVerMedia HDMI audio input**, never your normal microphone.
-3. With Automatic enabled, type its input index in the GUI and click **Start audio monitor**.
+3. With Automatic enabled, HDMI audio connects automatically using the saved or preferred AVerMedia HDMI input. Use the **Recording input** dropdown or **Rescan** only when needed; use **Mute / Unmute** for playback.
 4. If the audio is heard through your Windows output device, enable Discord's application **Share audio** option.
 5. Ask a Discord listener whether sound and video are in sync. Disable monitoring if feedback or double audio occurs.
 
