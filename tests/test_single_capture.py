@@ -276,3 +276,110 @@ def test_new_cli_commands():
     assert parser.parse_args(["scan-device", "--device", "1"]).device == 1
     assert parser.parse_args(["audio-devices"]).command == "audio-devices"
     assert parser.parse_args(["probe-window"]).command == "probe-window"
+
+
+# --- Audio signal diagnosis (no hardware access in unit tests) ---
+
+def test_audio_meter_tracks_signal_without_storing_samples():
+    from switchautopresence.audio_monitor import AudioMeter
+    meter = AudioMeter()
+    meter.observe(np.zeros((32, 2), dtype=np.float32))
+    assert not meter.report()["has_signal"]
+    meter.observe(np.full((480, 2), .25, dtype=np.float32))
+    report = meter.report()
+    assert report["blocks"] == 2
+    assert report["samples"] == 1024
+    assert report["has_signal"]
+    assert abs(report["latest_peak_dbfs"] + 12.0) < .2
+
+
+class FakeProbeStream:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.started = False
+        self.stopped = False
+        self.closed = False
+    def start(self):
+        self.started = True
+        # Fake audio callback; never opens a physical audio device.
+        self.kwargs["callback"](
+            np.full((480, self.kwargs["channels"]), .16, dtype=np.float32),
+            480, None, None,
+        )
+    def stop(self):
+        self.stopped = True
+    def close(self):
+        self.closed = True
+
+
+class FakeProbeBackend:
+    def __init__(self):
+        self.stream = None
+    def query_devices(self, index, kind):
+        assert index == 9 and kind == "input"
+        return {"name": "Test HDMI Audio", "max_input_channels": 2}
+    def InputStream(self, **kwargs):
+        self.stream = FakeProbeStream(**kwargs)
+        return self.stream
+
+
+def test_audio_test_reports_hdmi_energy_and_closes_portaudio():
+    from switchautopresence.audio_monitor import probe_audio_input
+    backend = FakeProbeBackend()
+    result = probe_audio_input(9, seconds=1, backend=backend, wait=lambda _: None)
+    assert result["status"] == "signal"
+    assert result["device_name"] == "Test HDMI Audio"
+    assert result["samples"] == 960
+    assert result["rms_dbfs"] < 0
+    assert backend.stream.stopped and backend.stream.closed
+
+
+class SilentProbeBackend(FakeProbeBackend):
+    def InputStream(self, **kwargs):
+        self.stream = FakeProbeStream(**kwargs)
+        self.stream.kwargs["callback"] = lambda indata, frames, timestamp, status: None
+        return self.stream
+
+
+@pytest.mark.parametrize("input_device,seconds", [(-1, 8), (2, 0), (2, 31)])
+def test_audio_test_rejects_invalid_parameters(input_device, seconds):
+    from switchautopresence.audio_monitor import probe_audio_input
+    with pytest.raises(ValueError):
+        probe_audio_input(input_device, seconds=seconds)
+
+
+def test_audio_device_metadata_includes_host_api_and_output():
+    from switchautopresence.audio_monitor import describe_audio_devices
+    class Backend:
+        class default:
+            device = (5, 7)
+        def query_devices(self):
+            return [
+                {"name": "AVerMedia HDMI", "hostapi": 0, "max_input_channels": 2,
+                 "max_output_channels": 0, "default_samplerate": 48000},
+                {"name": "Headphones", "hostapi": 0, "max_input_channels": 0,
+                 "max_output_channels": 2, "default_samplerate": 48000},
+            ]
+        def query_hostapis(self):
+            return [{"name": "Windows WASAPI"}]
+    devices = describe_audio_devices(Backend())
+    assert devices[0].hostapi == "Windows WASAPI"
+    assert devices[1].output_channels == 2
+    assert devices[0].index == 0
+
+
+def test_audio_monitor_exposes_realtime_rms_level():
+    backend = FakeAudioBackend()
+    monitor = AudioMonitor(5, backend=backend)
+    monitor.start()
+    data = np.full((128, 2), .1, dtype=np.float32)
+    backend.stream.options["callback"](data, np.zeros_like(data), 128, None, None)
+    assert monitor.levels()["latest_peak_dbfs"] < 0
+    assert monitor.levels()["blocks"] == 1
+    monitor.stop()
+
+
+def test_cli_accepts_audio_test():
+    args = make_parser().parse_args(["audio-test", "--input", "3", "--seconds", "6"])
+    assert args.input == 3
+    assert args.seconds == 6
