@@ -37,6 +37,28 @@ Window capture must be tested for occluded, minimized, or off-screen windows. If
 - Do not collect or upload gameplay frames or personal footage to a remote service.
 - Unknown titles can be selected manually, with a local game catalog and room for custom entries.
 
+
+
+### HOME screen recognition and Discord activity
+
+The Switch HOME menu displays the **highlighted game's full title above its tile** (for example, `The Legend of Zelda: Ocarina of Time`). Automatic detection should start by cropping that title area from frames captured from the **VideoGameCapture window** and reading it with offline OCR, optionally verifying a title against the tile artwork.
+
+**Do not mistake the highlighted tile for the game currently running.** Store it as a *candidate* until a launch transition is confirmed. If the console is on HOME, Discord should **still show Nintendo Switch as the activity**, with a generic Switch image and details like `Browsing HOME`. Never display `Playing <title>` merely because its tile is selected.
+
+### Discord artwork
+
+Use the Discord application identity **Nintendo Switch** for both modes. Its Rich Presence **large image** should change with the confirmed game, with an optional **small Nintendo Switch icon** overlay. In manual mode use the manually selected game's art, regardless of what the video recognizer sees.
+
+| Observation | Discord activity name | Details | Large image |
+| --- | --- | --- | --- |
+| HOME menu visible | Nintendo Switch | Browsing HOME | Generic Switch artwork |
+| Game launch confirmed | Nintendo Switch | Playing [confirmed title] | Game cover/icon |
+| Unknown active game | Nintendo Switch | Game not recognized | Generic Switch artwork |
+| Manual game chosen | Nintendo Switch | Playing [selected title] | Selected game's cover/icon |
+| Console off / signal lost in AUTO | Clear after a reasonable grace period | — | — |
+
+The image source should come from a **licensed/approved asset catalog**, or a valid publicly accessible URL when permitted; use the generic Switch image if a game has no safe art source. Do not dump copyrighted game cover artwork into the public GitHub repository without permission. Discord supports uploaded Rich Presence art assets and publicly accessible external URLs, subject to the specific RPC/SDK integration and valid image requirements. Images should not require uploading captured gameplay.
+
 ## Phase 1: Capture diagnostics
 
 Requires Windows 10/11 and Python 3.10+.
@@ -70,8 +92,8 @@ These are **observations from one system**, not broad hardware guarantees. The d
 - [x] Confirm initial GC553Pro direct-capture success and failure alongside the existing viewer
 - [ ] Phase 1B: read frames from the VideoGameCapture **window** without opening the capture device
 - [ ] Test minimized/occluded windows, Discord streaming, viewer compatibility and CPU usage
-- [ ] Phase 2: local Nintendo HOME recognition, launch confirmation and unknown-game handling
-- [ ] Phase 3: Discord Rich Presence and **manual/automatic mode selection with explicit override behavior**
+- [ ] Phase 2: OCR the HOME title strip, retain selected candidate, confirm actual launch and keep a generic Nintendo Switch activity while browsing HOME
+- [ ] Phase 3: Discord Rich Presence with per-game large artwork, small Nintendo Switch icon, fallback art, and **manual/automatic mode selection with explicit override behavior**
 - [ ] Phase 4: Windows tray app, settings, packaging and optional community title catalog
 
 ## Privacy
