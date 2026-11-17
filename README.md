@@ -67,11 +67,11 @@ git pull --ff-only origin feat/phase2-auto-manual-presence
 
 ~~~powershell
 .\.venv\Scripts\python.exe -m pip uninstall -y opencv-python opencv-python-headless
-.\.venv\Scripts\python.exe -m pip install --no-deps --force-reinstall "opencv-python-headless>=4.8,<5"
+.\.venv\Scripts\python.exe -m pip install --no-deps --force-reinstall "opencv-python>=4.8,<5"
 .\.venv\Scripts\python.exe -c "import cv2; print(cv2.__version__)"
 ~~~
 
-This repair operates **only inside the project virtual environment**. The project uses Pillow/Tkinter for previews, so headless OpenCV is sufficient.
+This repair operates **only inside the project virtual environment**. The project uses Pillow/Tkinter for previews, so we can use a single OpenCV package.
 
 ## First video test
 
