@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import messagebox, ttk
+from queue import Empty, SimpleQueue
 from time import monotonic
 
 from PIL import Image, ImageTk
@@ -16,6 +17,7 @@ import cv2
 
 from .preview_policy import RenderTargets, FrameScheduler
 from .state import Mode
+from .tray import TrayController
 from .audio_monitor import describe_audio_devices
 from .audio_preferences import (
     load_audio_selection,
@@ -34,7 +36,10 @@ def run_gui(runtime):
 
     body = ttk.Frame(root, padding=14)
     body.pack(fill="both", expand=True)
-    ttk.Label(body, text="SwitchAutoPresence", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+    header = ttk.Frame(body)
+    header.pack(fill="x")
+    ttk.Label(header, text="SwitchAutoPresence", font=("Segoe UI", 18, "bold")).pack(side="left")
+    ttk.Button(header, text="Minimize to tray", command=lambda: minimize_to_tray()).pack(side="right")
     ttk.Label(
         body, text="One capture card reader  •  automatic game detection  •  manual override"
     ).pack(anchor="w", pady=(0, 8))
@@ -72,6 +77,8 @@ def run_gui(runtime):
     # Opening it behind other apps keeps it capturable without making it topmost.
     inline_preview_active = [True]
     original_control_geometry = [None]
+    tray_events = SimpleQueue()
+    tray_controller = [None]
 
     def enable_auto():
         try:
@@ -82,7 +89,10 @@ def run_gui(runtime):
             w, h = (int(v) for v in dims.split("x"))
             runtime.configure_video(index, backend=backend_var.get(), width=w, height=h, fps=int(fps_value))
             runtime.select_auto()
-            root.after(200, route_audio)
+            if not runtime.status().get("audio_enabled"):
+                root.after(200, route_audio)
+            if stream_window[0] is None:
+                resume_inline_preview()
         except ValueError as exc:
             messagebox.showerror("Video settings", str(exc))
 
@@ -109,7 +119,11 @@ def run_gui(runtime):
     def set_manual():
         try:
             runtime.select_manual(game_var.get(), image_var.get().strip())
-            audio_notice.set("Manual mode: capture and sound are handled by Discord.")
+            # Manual game metadata doesn't require owning the video feed.
+            if stream_window[0] is not None:
+                close_stream_window()
+            pause_inline_preview()
+            audio_notice.set("Manual presence: Discord handles video; local HDMI audio remains active.")
         except ValueError as exc:
             messagebox.showerror("Manual game", str(exc))
 
@@ -117,6 +131,7 @@ def run_gui(runtime):
     actions.pack(fill="x", pady=(4, 8))
     ttk.Button(actions, text="Start automatic capture", command=enable_auto).pack(side="left", padx=(0, 8))
     ttk.Button(actions, text="Set manual game", command=set_manual).pack(side="left", padx=(0, 8))
+    ttk.Button(actions, text="Discord direct", command=lambda: select_discord_direct()).pack(side="left", padx=(0, 8))
     ttk.Button(actions, text="Clear activity", command=runtime.clear).pack(side="left")
 
     def pause_inline_preview():
@@ -165,7 +180,16 @@ def run_gui(runtime):
             w.destroy()
         except tk.TclError:
             pass
-        resume_inline_preview()
+        if runtime.session.snapshot().mode == Mode.AUTO:
+            resume_inline_preview()
+
+    def select_discord_direct():
+        """Leave GC553Pro video entirely to Discord; retain local HDMI sound."""
+        runtime.select_direct()
+        if stream_window[0] is not None:
+            close_stream_window()
+        pause_inline_preview()
+        audio_notice.set("Discord owns the capture-card video; local HDMI sound stays enabled.")
 
     def show_stream_for_selection():
         """Temporary manual recovery when Discord's picker needs a foreground window."""
@@ -188,8 +212,15 @@ def run_gui(runtime):
             pass
 
     def open_stream_window():
+        if runtime.session.snapshot().mode != Mode.AUTO:
+            messagebox.showinfo(
+                "SwitchAutoPresence",
+                "Discord Direct mode doesn't need a stream window. "
+                "To use the app's own preview instead, choose Start automatic capture."
+            )
+            return
         if stream_window[0] is not None:
-            send_stream_to_background()
+            show_stream_for_selection()
             return
         win = tk.Toplevel(root)
         win.withdraw()  # Configure completely before mapping.
@@ -208,10 +239,11 @@ def run_gui(runtime):
         frame_scheduler.reset()
         win.protocol("WM_DELETE_WINDOW", close_stream_window)
         pause_inline_preview()
-        # It must be mapped (not truly hidden) for Discord window sharing.
-        # Immediately lower it instead of forcing a second video to the front.
+        # Show this window in front once for Discord's application picker.
+        # After selection, it can be covered normally without staying topmost.
         win.deiconify()
-        root.after_idle(send_stream_to_background)
+        win.lift()
+        win.focus_set()
 
     show_stream_button = ttk.Button(
         actions, text="Show stream for Discord picker", command=show_stream_for_selection
@@ -288,9 +320,8 @@ def run_gui(runtime):
 
     def route_audio():
         """Start/reconfigure sound automatically. No Start Audio button."""
-        if runtime.session.snapshot().mode != Mode.AUTO:
-            audio_notice.set("Audio is managed by Discord in Manual mode.")
-            return
+        # HDMI audio is independent of the video source: it must work while
+        # Discord captures GC553Pro video in Direct or Manual mode.
         selected = audio_input_var.get()
         input_id = input_by_label.get(selected)
         output_id = output_by_label.get(audio_output_var.get())
@@ -453,7 +484,10 @@ def run_gui(runtime):
         elif s["error"]:
             hint_var.set(s["error"])
         elif s["mode"] == "manual":
-            hint_var.set("Manual mode releases video capture: stream directly from AVerMedia in Discord if desired.")
+            hint_var.set("Manual game presence. Discord owns video; HDMI audio remains available locally.")
+        elif s["mode"] == "direct":
+            hint_var.set("Discord Direct: capture the AVerMedia in Discord for smooth video. "
+                         "SwitchAutoPresence handles local sound; select a game manually if desired.")
         elif s["mode"] == "auto":
             if stream_window[0] is not None:
                 win = stream_window[0]
@@ -475,16 +509,51 @@ def run_gui(runtime):
             hint_var.set("Rich Presence cleared. Select Automatic or Manual to resume.")
         root.after(750, update_status)
 
+    def minimize_to_tray():
+        """Hide only the controller; never minimize Discord's source window."""
+        if tray_controller[0] is None:
+            tray_controller[0] = TrayController(tray_events)
+        try:
+            tray_controller[0].start()
+        except Exception as exc:
+            messagebox.showerror("System tray", str(exc))
+            return
+        root.withdraw()
+
+    def process_tray_events():
+        try:
+            while True:
+                action = tray_events.get_nowait()
+                if action == "show":
+                    root.deiconify()
+                    root.lift()
+                    root.focus_set()
+                elif action == "mute":
+                    toggle_mute()
+                elif action == "exit":
+                    close()
+                    return
+        except Empty:
+            pass
+        if root.winfo_exists():
+            root.after(150, process_tray_events)
+
     def close():
+        controller, tray_controller[0] = tray_controller[0], None
+        if controller is not None:
+            controller.stop()
         close_stream_window()
         runtime.stop()
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", close)
     runtime.start()
-    # Automatically connect HDMI sound. Users can change devices or mute
-    # without stopping the stream; Manual mode delegates capture to Discord.
+    # Audio starts automatically even in Discord-direct and Manual modes.
     root.after(400, route_audio)
+    # Persist Discord-direct mode across sessions, including initial compact UI.
+    if runtime.session.snapshot().mode in (Mode.DIRECT, Mode.MANUAL, Mode.CLEARED):
+        root.after(100, pause_inline_preview)
+    root.after(150, process_tray_events)
     draw()
     update_status()
     root.mainloop()
