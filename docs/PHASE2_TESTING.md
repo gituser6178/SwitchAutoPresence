@@ -41,7 +41,7 @@ Expected: `Status: ok`, nonzero samples, real frame dimensions. The capture card
 Navigate to the Switch 2 HOME menu and **highlight Zelda: Ocarina of Time**.
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence scan-window --window "VideoGameCapture" --seconds 12
+.\.venv\Scripts\python.exe -m switchautopresence scan-window --window "VideoGameCapture" --seconds 12
 ~~~
 
 Expected at least one `screen=home` result with `title=The Legend of Zelda: Ocarina of Time`. Test a second title such as Pokémon Violet.
@@ -49,7 +49,7 @@ Expected at least one `screen=home` result with `title=The Legend of Zelda: Ocar
 If HOME shows as `screen=other`, the visual heuristic or window crop is not yet calibrated to the real video. If HOME is detected but title is blank, adjust the normalized title ROI:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence scan-window --window "VideoGameCapture" --roi "0.08,0.19,0.84,0.19" --seconds 12
+.\.venv\Scripts\python.exe -m switchautopresence scan-window --window "VideoGameCapture" --roi "0.08,0.19,0.84,0.19" --seconds 12
 ~~~
 
 ROI format is `x,y,width,height`, all values in 0..1. Tuning affects only where OCR reads, not the HOME layout classification. To prevent personal footage exposure, report **the text output**, not gameplay screenshots.
@@ -57,7 +57,7 @@ ROI format is `x,y,width,height`, all values in 0..1. Tuning affects only where 
 ## 4. Run the UI, including manual without Discord
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --window "VideoGameCapture"
+.\.venv\Scripts\python.exe -m switchautopresence app --window "VideoGameCapture"
 ~~~
 
 - Enter `Pokémon Violet`, select **Set manual game**: manual mode remains selected regardless of camera/recognition updates.
@@ -73,7 +73,7 @@ This runs in **dry-run** mode if no Discord Application ID was supplied.
 Create a Discord Developer Application, then use its public Application ID (never a user token):
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --app-id YOUR_APP_ID --window "VideoGameCapture"
+.\.venv\Scripts\python.exe -m switchautopresence app --app-id YOUR_APP_ID --window "VideoGameCapture"
 ~~~
 
 - **Manual Pokémon:** should show `Nintendo Switch` with `Playing Pokémon Violet`; a configured artwork URL/asset should appear as large image.
