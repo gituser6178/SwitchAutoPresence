@@ -128,8 +128,11 @@ def run_gui(runtime):
     audio_box = ttk.Frame(body)
     audio_box.pack(fill="x", pady=(4, 2))
     audio_var = tk.StringVar()
-    ttk.Label(audio_box, text="AVerMedia HDMI audio input index (optional)").pack(side="left", padx=(0, 8))
-    ttk.Entry(audio_box, textvariable=audio_var, width=6).pack(side="left")
+    output_var = tk.StringVar()
+    ttk.Label(audio_box, text="AVerMedia HDMI audio input #").pack(side="left", padx=(0, 6))
+    ttk.Entry(audio_box, textvariable=audio_var, width=5).pack(side="left")
+    ttk.Label(audio_box, text="Windows playback output # (optional)").pack(side="left", padx=(12, 6))
+    ttk.Entry(audio_box, textvariable=output_var, width=5).pack(side="left")
     audio_button = ttk.Button(audio_box)
     audio_button.pack(side="left", padx=(8, 0))
 
@@ -138,17 +141,24 @@ def run_gui(runtime):
             runtime.disable_audio()
             return
         try:
-            runtime.enable_audio(int(audio_var.get().strip()))
+            input_id = int(audio_var.get().strip())
+            output_id = int(output_var.get().strip()) if output_var.get().strip() else None
+            runtime.enable_audio(input_id, output_device=output_id)
         except ValueError:
-            messagebox.showerror("Audio input", "Enter the HDMI audio input index from the audio-devices command.")
+            messagebox.showerror(
+                "Audio device", "Enter the AVerMedia HDMI input number from audio-devices; "
+                "the playback output number is optional."
+            )
         except RuntimeError as exc:
             messagebox.showerror("Audio monitor", str(exc))
 
     audio_button.configure(text="Start audio monitor", command=toggle_audio)
+    audio_level_var = tk.StringVar(value="Audio: not monitoring")
+    ttk.Label(body, textvariable=audio_level_var, font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(
         body,
-        text="Only monitor AVerMedia HDMI audio. Avoid selecting a microphone (feedback risk). "
-             "Discord application-audio sharing requires a separate Windows test.",
+        text="Run 'audio-devices' and 'audio-test --input N' first. Select HDMI sound, never "
+             "your microphone (feedback risk). Verify Discord shares this app's audio.",
         wraplength=800, font=("Segoe UI", 9),
     ).pack(anchor="w", pady=(1, 8))
 
@@ -218,7 +228,19 @@ def run_gui(runtime):
             f"| {video} | {fps_info}"
         )
         audio_button.configure(text="Stop audio monitor" if s["audio_enabled"] else "Start audio monitor")
-        if s["error"]:
+        levels = s.get("audio_levels")
+        if levels is not None:
+            audio_level_var.set(
+                f"HDMI audio input {s['audio_input']}: "
+                f"RMS {levels['latest_rms_dbfs']:.1f} dBFS, "
+                f"peak {levels['latest_peak_dbfs']:.1f} dBFS "
+                f"({'signal detected' if levels['has_signal'] else 'no meaningful signal yet'})"
+            )
+        else:
+            audio_level_var.set("Audio: monitor OFF; run audio-test to check HDMI input")
+        if s.get("audio_error"):
+            hint_var.set(s["audio_error"])
+        elif s["error"]:
             hint_var.set(s["error"])
         elif s["mode"] == "manual":
             hint_var.set("Manual mode releases video capture: stream directly from AVerMedia in Discord if desired.")
