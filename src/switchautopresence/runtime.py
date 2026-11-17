@@ -127,18 +127,25 @@ class Runtime:
         except OSError as exc:
             self.error = f"Could not save preferences: {exc}"
 
-    def enable_audio(self, input_device: int, *, monitor_factory=AudioMonitor) -> None:
+    def enable_audio(
+        self, input_device: int, *, output_device: int | None = None,
+        monitor_factory=AudioMonitor,
+    ) -> None:
         if self.session.snapshot().mode != Mode.AUTO:
             raise ValueError("Enable automatic mode before audio monitoring")
         if self._audio:
             self.disable_audio()
-        audio = monitor_factory(input_device)
+        if output_device is None:
+            audio = monitor_factory(input_device)
+        else:
+            audio = monitor_factory(input_device, output_device=output_device)
         try:
             audio.start()
         except Exception as exc:
             self.error = f"Audio monitoring could not start: {exc}"
             raise RuntimeError(self.error) from exc
         self._audio = audio
+        self.error = None
 
     def disable_audio(self) -> None:
         if self._audio is not None:
@@ -283,5 +290,9 @@ class Runtime:
             "using_defaults": bool(reader and reader.using_defaults),
             "frame_age": round(self.clock() - self._last_frame_at, 1) if self._last_frame_at else None,
             "audio_enabled": bool(self._audio and self._audio.running),
+            "audio_input": self._audio.input_device if self._audio else None,
+            "audio_output": self._audio.output_device if self._audio else None,
+            "audio_levels": self._audio.levels() if self._audio and self._audio.running else None,
+            "audio_error": self._audio.error if self._audio else None,
             "error": self.error or (reader.error if reader else None) or self.publisher.error,
         }
