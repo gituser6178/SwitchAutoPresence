@@ -4,6 +4,28 @@ An **unofficial Windows utility** for sharing Nintendo Switch and Switch 2 games
 
 > **v0.3 pre-alpha / Windows hardware validation pending.** The application owns a single capture-card video stream, displays an optional streamable preview window, inspects the same frames for HOME-menu titles, and updates Discord Rich Presence. It is not a production-quality streamer, and audio sharing is **experimental**.
 
+
+## Recommended: Discord Direct mode (smooth native capture)
+
+The GC553Pro on one Windows PC delivers near-60-FPS video **when Discord captures the AVerMedia directly**, while the experimental Tkinter preview window was measured around 39 FPS. Discord viewers already receive HDMI game audio with direct capture; the missing piece was local playback through headphones.
+
+**Use Discord Direct rather than the app's own stream window for this workflow.**
+
+1. Run `switchautopresence app --device 1` and click **Discord direct**. This releases SwitchAutoPresence's **video** capture handle; the app continues to receive **audio** from the AVerMedia HDMI recording endpoint and plays it through your Windows default output.
+2. In Discord, select/capture the **AVerMedia Live Gamer ULTRA S GC553Pro directly**, as you did before. The Discord viewers should receive full-speed video and the card's own audio. Avoid trying to open the same video feed with SwitchAutoPresence at the same time.
+3. Leave **Windows Listen to this device disabled**. SwitchAutoPresence automatically finds and opens HDMI audio for your headphones. The **Mute / Unmute** button silences the app's playback. If you want game-specific Rich Presence, choose **Set manual game** (and configure a Discord Developer Application ID); that does **not** stop local HDMI audio.
+4. Click **Minimize to tray**. The control panel disappears; the capture-card audio relay and Discord Presence keep running. Right-click the SwitchAutoPresence tray icon to **Open**, **Mute / Unmute** or **Exit**. Windows may put the icon behind the system tray's overflow arrow.
+5. Your mode is saved, so restarting the app in Discord Direct or Manual mode **does not automatically open** the capture-card video handle.
+
+**Trade-off:** automatic visual game detection is unavailable in Discord Direct mode. The app cannot read frames from a capture card while Discord owns that video source without a shared-feed architecture. Use manual game selection, or switch to Automatic mode and the app's own stream window when visual recognition matters more than smooth native capture. Switching to Automatic **while Discord is capturing the card directly** may fail or interrupt its video access.
+
+The HDMI **audio** endpoint is separate from video, but driver policies vary: simultaneous Discord direct capture and local HDMI audio monitoring still require testing on the actual PC. Successful audio monitoring with the app's own video source does **not by itself** prove simultaneous audio access when Discord owns video.
+
+### Stream-window and tray controls
+
+When you do use SwitchAutoPresence's own video stream, **Start stream source** opens the capture window **in the foreground** for Discord's application picker. After you select it, the window can be covered (but not minimized), and it isn't permanently always-on-top. **Minimize to tray** hides only the control panel, not this stream source, so Discord's window capture can continue.
+
+
 ## Agreed development direction
 
 **Streaming reliability comes first:** measured 60 FPS preview and confirmed HDMI audio in Discord, then working manual Discord Presence with artwork. Automatic recognition remains useful but must not block a release.
