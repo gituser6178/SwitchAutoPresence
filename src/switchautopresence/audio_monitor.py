@@ -109,6 +109,8 @@ class AudioMeter:
                 "latest_rms_dbfs": _dbfs(self._last_rms),
                 "latest_peak_dbfs": _dbfs(self._last_peak),
                 "has_signal": self._samples > 0 and total >= 0.002,
+                "has_peaks": self._samples > 0 and self._peak >= 0.0056,
+                # Peaks alone could be noise; do not treat as confirmed game audio.
             }
 
 
@@ -162,11 +164,19 @@ def probe_audio_input(
         ) from exc
 
     report = meter.report()
+    if not report["blocks"]:
+        status = "no_frames"
+    elif report["has_signal"]:
+        status = "signal"
+    elif report["has_peaks"]:
+        status = "weak_signal"
+    else:
+        status = "silent"
     report.update(
         input_device=input_device, device_name=str(info["name"]),
         seconds=float(seconds), samplerate=samplerate,
         channels=channels, warnings=warnings,
-        status="signal" if report["has_signal"] else ("silent" if report["blocks"] else "no_frames"),
+        status=status,
     )
     return report
 
