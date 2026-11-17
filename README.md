@@ -68,10 +68,10 @@ Manual mode **releases the capture card**, allowing you to stream directly from 
 OpenCV captures **video only**. For sound, v0.3 includes optional in-process monitoring of the **AVerMedia HDMI audio input** to your default Windows audio output. If Discord captures the shared application's output audio, your audience may hear it as well. **This is NOT yet verified on the GC553Pro with Discord.**
 
 - Run `audio-devices` to find the exact AVerMedia HDMI audio input index.
-- Enter that index in the UI and choose **Start audio monitor** (only in Automatic mode).
+- In Automatic mode, the app **automatically detects and opens** the AVerMedia HDMI audio input. Use the recording-device dropdown only if you need a different input.
 - Do **not** select your microphone: doing so can create feedback.
 - Check Discord's **Share audio** option when sharing the stream window. Listen through headphones if needed.
-- Stop audio monitoring immediately if you hear feedback, echoes, or doubled game audio.
+- The **Mute / Unmute** button silences output for both your headphones and any Discord application-audio share without releasing the audio input. If you hear feedback or doubled audio, disable Windows **Listen to this device**.
 
 Do not consider the streaming pipeline fully validated until video **and** audio are tested.
 
@@ -84,7 +84,7 @@ On the initial tester's PC, **HDMI audio input #14 = 48 kHz WASAPI** and the **d
 
 1. **Disable** Windows Sound → Recording → AVerMedia HDMI → Properties → **Listen to this device** before starting the app. Otherwise you will hear doubled audio.
 2. Launch \`.\.venv\Scripts\python.exe -m switchautopresence app --device 1\` and use Automatic mode (the capture card must be free of Discord direct capture).
-3. Type **14** as HDMI input, leave optional playback output **blank** so Windows' default TOPPING DAC is used, then click **Start audio monitor**.
+3. Audio starts **automatically** when the application enters Automatic mode. The best available AVerMedia HDMI input is selected, with playback routed to your default TOPPING DAC. Use the dropdowns to override devices, **Rescan** after hot-plugging, or **Mute / Unmute** playback.
 4. The audio meter should report **separate**, **48000→44100 Hz**, and **output #5** while playing the game through your default speakers/headphones.
 5. Check audio locally first, then enable **Share audio** when screen-sharing the **SwitchAutoPresence Stream** application in Discord; verify with a remote listener.
 
@@ -104,7 +104,7 @@ This is experimental until audio output and synchronization are verified on Wind
 
 Replace `N` with the correct **AVerMedia recording input index**, not your video device index (the indices may differ). The test reports RMS/peak levels without playing or saving audio.
 
-If it reports **signal**, launch the app, enter the same HDMI audio input index in its audio controls, and click **Start audio monitor**. The GUI now shows audio levels. The optional output device field lets you choose your actual headphones/speakers; leaving it blank uses the default playback output. Then use Discord Windows desktop to share the **SwitchAutoPresence Stream** application and enable **Share audio** when available.
+You no longer need to run the audio-test command before using the app. **Automatic audio detection and playback start on launch** when Automatic mode is active. The GUI shows the selected HDMI input, audio levels and a **Mute / Unmute** control; device dropdowns and Rescan provide manual recovery if needed. The default playback output is used unless you choose otherwise. Discord audio sharing was successfully confirmed by a user, but sustained synchronization still needs measurement.
 
 **A successful audio level test does not prove Discord viewers hear it.** Only a remote listener can confirm sound and synchronization. See [audio testing guide](docs/AUDIO_TESTING.md) for the three-step verification and troubleshooting.
 
@@ -146,7 +146,7 @@ Close Discord's direct capture of that device, then start the application:
 
 The `--device 1` value was correct in one initial GC553Pro test; yours may differ. If no video appears, try **1280×720 @ 60** from the UI or the alternate `--backend msmf` option. Actual negotiated frame size and FPS are displayed by the UI. The app will retry the driver's default format once if the requested format produces no frames.
 
-Use **Open stream window** in the UI and share that window on Discord. **Do not close the app while it is being streamed**.
+Use **Start stream source** in the UI and share that application window on Discord. **Do not close the app while it is being streamed**.
 
 To test HOME recognition without a Discord Application ID, close the app and run:
 
@@ -214,3 +214,11 @@ Code is **MIT-licensed**. Nintendo, Discord, and AVerMedia are unaffiliated with
 - Two consecutive HOME observations are required before interrupting active gameplay.
 - The scan-device command reports OCR method (cyan_line, normal_ocr, cyan_title_unreadable, neutral_without_title), recognized text and matched game.
 - If a title remains unknown, run scan-device while highlighting Zelda on HOME and share its text output. Do not upload captured gameplay.
+
+### Automatic audio and mute (current build)
+
+On Windows the app now discovers the capture-card HDMI audio endpoint itself, preferring **AVerMedia HDMI / Windows WASAPI** and remembering a successful device by name and API even if Windows renumbers it. The audio relay connects automatically when Automatic mode starts. It does **not** auto-select your microphone or any endpoint marked `Not To Use`.
+
+There is no Start Audio Monitor button. You can change the **Recording input** or **Playback output** dropdown and the route restarts automatically; **Rescan** refreshes connected device choices. The **Mute** button silences local output and Discord's application audio without closing the HDMI stream; **Unmute** restores it. Manual game mode deliberately releases the capture card for direct Discord capture, so the app's automatic audio route is used in Automatic mode.
+
+The duplicate control-panel preview widget is **destroyed** while the stream source is open. Closing that stream window recreates the control-panel preview. The source window remains mapped/unminimized behind other applications so Discord may capture it; a truly invisible capture source requires another backend.
