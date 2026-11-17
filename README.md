@@ -61,7 +61,7 @@ If the title is different, supply the **visible window title substring** from th
 **Then display Switch HOME and test OCR:**
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence scan-window --window "VideoGameCapture" --seconds 12
+.\.venv\Scripts\python.exe -m switchautopresence scan-window --window "VideoGameCapture" --seconds 12
 ~~~
 
 Expected diagnostic: `screen=home | title=The Legend of Zelda: Ocarina of Time` (the exact frame content may differ). No frames are saved. If it reports `screen=other` while on HOME, adjust the capture target/ROI and report it so we can improve the HOME classifier.
@@ -69,7 +69,7 @@ Expected diagnostic: `screen=home | title=The Legend of Zelda: Ocarina of Time` 
 **Launch the app (manual UI works even before Discord is configured):**
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --window "VideoGameCapture"
+.\.venv\Scripts\python.exe -m switchautopresence app --window "VideoGameCapture"
 ~~~
 
 For Discord presence to display for real:
@@ -79,7 +79,7 @@ For Discord presence to display for real:
 3. Ensure the desktop Discord client is open, then launch:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --window "VideoGameCapture" --app-id YOUR_APPLICATION_ID
+.\.venv\Scripts\python.exe -m switchautopresence app --window "VideoGameCapture" --app-id YOUR_APPLICATION_ID
 ~~~
 
 The application uses pypresence's modern activity-name override to request **Nintendo Switch** as the displayed Rich Presence name. Discord's actual display should be verified on your client.
@@ -91,22 +91,22 @@ In the app's **Game artwork** field, enter an **HTTPS URL directly to an image**
 Automatic mode also uses those saved per-game art mappings. For a generic HOME or unrecognized title, optionally configure `generic` and `small` image asset keys in a local JSON file based on [artwork.example.json](artwork.example.json):
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence app --app-id YOUR_APPLICATION_ID --artwork .my-artwork.json
+.\.venv\Scripts\python.exe -m switchautopresence app --app-id YOUR_APPLICATION_ID --artwork .\my-artwork.json
 ~~~
 
 If no image is configured, Discord may show the Developer Application's default icon. **No copyrighted game cover files are bundled with this repository.**
 
 ### Add more games
 
-The initial offline title list is intentionally small; see the names in [catalog.py](src/switchautopresence/catalog.py). Create a local JSON array of additional exact game titles (copy [titles.example.json](titles.example.json)), then run with `--titles .my-titles.json`. Manual mode accepts arbitrary names even without this catalog.
+The initial offline title list is intentionally small; see the names in [catalog.py](src/switchautopresence/catalog.py). Create a local JSON array of additional exact game titles (copy [titles.example.json](titles.example.json)), then run with `--titles .\my-titles.json`. Manual mode accepts arbitrary names even without this catalog.
 
 ### Legacy diagnostic
 
 The Phase 1 hardware capture probe is still available:
 
 ~~~powershell
-..venvScriptspython.exe -m switchautopresence devices
-..venvScriptspython.exe -m switchautopresence probe --device 1 --seconds 8
+.\.venv\Scripts\python.exe -m switchautopresence devices
+.\.venv\Scripts\python.exe -m switchautopresence probe --device 1 --seconds 8
 ~~~
 
 **Don't run the direct hardware probe while an important Discord stream is active.** The tested GC553Pro returned unavailable when another app already held the video source. Use `probe-window` instead.
