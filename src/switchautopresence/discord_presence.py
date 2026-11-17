@@ -90,7 +90,7 @@ class DiscordPublisher:
             "state": activity.state[:128],
         }
         if activity.started_at is not None:
-            payload["start"] = activity.started_at * 1000  # pypresence 4.6+ uses epoch milliseconds
+            payload["start"] = int(activity.started_at)  # pypresence accepts Unix epoch seconds
         if images.large_image:
             payload["large_image"] = images.large_image
             payload["large_text"] = images.large_text[:128]
