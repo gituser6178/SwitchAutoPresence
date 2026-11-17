@@ -45,6 +45,8 @@ git fetch origin
 git switch feat/phase2-auto-manual-presence
 .\.venv\Scripts\python.exe -m pip uninstall -y opencv-python
 .\.venv\Scripts\python.exe -m pip install -e ".[all]"
+.\.venv\Scripts\python.exe -m pip install --force-reinstall --no-deps opencv-python-headless
+.\.venv\Scripts\python.exe -c "import cv2; print('OpenCV:', cv2.__version__)"
 ~~~
 
 The uninstall removes the older GUI OpenCV wheel from **this project virtual environment only**: RapidOCR now uses the headless OpenCV build, which still supports video processing. Do not uninstall global Python packages.
