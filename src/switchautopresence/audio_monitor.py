@@ -208,6 +208,19 @@ class AudioMonitor:
         self.route_mode: str | None = None
         self.meter = AudioMeter()
         self.error: str | None = None
+        # Mute affects both local playback and any Discord application-audio
+        # capture. Keep sampling HDMI and draining the FIFO while muted.
+        self._muted = Event()
+
+    @property
+    def muted(self) -> bool:
+        return self._muted.is_set()
+
+    def set_muted(self, muted: bool) -> None:
+        if muted:
+            self._muted.set()
+        else:
+            self._muted.clear()
 
     @property
     def running(self) -> bool:
@@ -216,6 +229,7 @@ class AudioMonitor:
     def levels(self) -> dict:
         report = self.meter.report()
         report.update(
+            muted=self.muted,
             route_mode=self.route_mode,
             output_endpoint=self.output_endpoint,
             input_rate=self.input_rate,
@@ -262,7 +276,10 @@ class AudioMonitor:
                     if status:
                         self.error = f"Audio callback warning: {status}"
                     self.meter.observe(indata)
-                    outdata[:] = indata
+                    if self._muted.is_set():
+                        outdata.fill(0)
+                    else:
+                        outdata[:] = indata
 
                 stream = sd.Stream(
                     samplerate=input_rate,
@@ -294,7 +311,11 @@ class AudioMonitor:
                 def output_callback(outdata, frames, timestamp, status):
                     if status:
                         self.error = f"Audio output warning: {status}"
-                    outdata[:] = bridge.pull(frames)
+                    data = bridge.pull(frames)
+                    if self._muted.is_set():
+                        outdata.fill(0)
+                    else:
+                        outdata[:] = data
 
                 inp = sd.InputStream(
                     samplerate=input_rate,
