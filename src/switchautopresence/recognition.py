@@ -166,7 +166,11 @@ class HomeRecognizer:
         region = crop_region(frame, self.roi)
         if region.size == 0:
             return Recognition(FrameKind.OTHER, method="empty_title_region")
-        candidate_line = cyan_line_crop(region)
+        # The Switch 2 HOME title is near y≈0.23, and game artwork starts
+        # near y≈0.27. Inspect only the upper strip for cyan title pixels;
+        # the larger ROI remains available for conventional OCR fallback.
+        title_strip_roi = (self.roi[0], self.roi[1], self.roi[2], min(self.roi[3], .08))
+        candidate_line = cyan_line_crop(crop_region(frame, title_strip_roi))
         fallback = None
         if candidate_line is not None:
             text, confidence, match = self._read(candidate_line, line=True)

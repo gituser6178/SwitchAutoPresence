@@ -430,7 +430,7 @@ def test_cyan_zelda_title_uses_recognition_only_fallback():
     import cv2
     frame = home_image()
     cv2.putText(
-        frame, "The Legend of Zelda: Ocarina of Time", (105, 180),
+        frame, "The Legend of Zelda: Ocarina of Time", (105, 150),
         cv2.FONT_HERSHEY_SIMPLEX, .75, (235, 222, 85), 2,
     )
     class DirectOCR:
@@ -464,3 +464,12 @@ def test_one_false_home_frame_does_not_reset_confirmed_playing(tmp_path):
     assert app.session.snapshot().screen == Screen.PLAYING
     app._observe(frame)
     assert app.session.snapshot().screen == Screen.HOME
+
+
+def test_cyan_game_tile_colors_do_not_count_as_home_title():
+    frame = home_image()
+    # Bright cyan artwork below the title region is NOT title evidence.
+    frame[170:220, 200:700] = (235, 222, 85)
+    result = HomeRecognizer(GameCatalog(), engine=StubOCR([], [])).analyze(frame)
+    assert result.kind == FrameKind.OTHER
+    assert result.method == "neutral_without_title"
