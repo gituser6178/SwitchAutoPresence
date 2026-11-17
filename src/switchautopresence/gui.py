@@ -234,7 +234,7 @@ def run_gui(runtime):
                 f"HDMI audio input {s['audio_input']}: "
                 f"RMS {levels['latest_rms_dbfs']:.1f} dBFS, "
                 f"peak {levels['latest_peak_dbfs']:.1f} dBFS "
-                f"({'signal detected' if levels['has_signal'] else 'no meaningful signal yet'})"
+                f"({'signal detected' if levels['has_signal'] else ('weak/intermittent peaks' if levels.get('has_peaks') else 'nearly silent')})"
             )
         else:
             audio_level_var.set("Audio: monitor OFF; run audio-test to check HDMI input")
