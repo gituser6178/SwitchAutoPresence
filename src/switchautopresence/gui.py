@@ -293,8 +293,8 @@ def run_gui(runtime):
             runtime.enable_audio(input_id, output_device=output_id)
             audio_notice.set(f"Audio active: {selected}")
             try:
-                selection = selection_from_devices(audio_devices, input_id, output_id)
-                save_audio_selection(selection)
+                preference = selection_from_devices(audio_devices, input_id, output_id)
+                save_audio_selection(preference)
             except (OSError, ValueError, RuntimeError):
                 # Do not interrupt sound because preferences couldn't be saved.
                 pass
