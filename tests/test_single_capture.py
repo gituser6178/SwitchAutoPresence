@@ -471,3 +471,8 @@ def test_discord_direct_mode_does_not_open_video_on_restart(tmp_path):
     app.stop()
     again = make_runtime(tmp_path, device=1)
     assert again.status()["mode"] == Mode.DIRECT.value
+
+
+def test_cli_allows_discord_native_capture_without_opening_video():
+    parsed = make_parser().parse_args(["app", "--device", "1", "--discord-direct"])
+    assert parsed.discord_direct is True
