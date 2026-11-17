@@ -69,6 +69,8 @@ class Runtime:
         mode, manual = load_mode(settings_file)
         if mode == Mode.MANUAL and manual:
             self.session.set_manual(manual)
+        elif mode == Mode.DIRECT:
+            self.session.use_direct_capture()
         elif mode == Mode.CLEARED:
             self.session.clear()
 
@@ -108,6 +110,12 @@ class Runtime:
                 self.error = f"Could not save artwork: {exc}"
         self._persist()
 
+    def select_direct(self) -> None:
+        """Give video to Discord; keep local HDMI sound through our audio relay."""
+        self.error = None
+        self.session.use_direct_capture()
+        self._persist()
+
     def select_auto(self) -> None:
         self.error = None
         self.session.resume_auto()
@@ -132,8 +140,8 @@ class Runtime:
         self, input_device: int, *, output_device: int | None = None,
         monitor_factory=AudioMonitor,
     ) -> None:
-        if self.session.snapshot().mode != Mode.AUTO:
-            raise ValueError("Enable automatic mode before audio monitoring")
+        # Audio is independent of video ownership. Discord may own video
+        # while this process uses the capture-card HDMI recording endpoint.
         if self._audio:
             self.disable_audio()
         if output_device is None:
@@ -222,8 +230,8 @@ class Runtime:
             if mode != Mode.AUTO or desired is None:
                 if reader is not None:
                     self._stop_capture()
-                if self._audio is not None:
-                    self.disable_audio()
+                # Do not stop HDMI audio in Manual/Discord-direct modes:
+                # local headphones still need the capture-card sound.
                 if mode == Mode.AUTO and desired is None:
                     self.error = "Select a capture device index, or use Manual mode"
             else:
@@ -242,7 +250,8 @@ class Runtime:
                     if reader.closed:
                         self.session.no_signal()
                         self.error = reader.error or "Video capture stopped"
-                        self.disable_audio()
+                        # A failed video feed must not silence an independent
+                        # HDMI recording endpoint.
                         self._stop_capture()
                         next_capture_retry = now + 8.0
                     else:
@@ -280,6 +289,7 @@ class Runtime:
             options = self._options
         return {
             "mode": snap.mode.value,
+            "discord_owns_video": snap.mode in (Mode.DIRECT, Mode.MANUAL),
             "screen": snap.screen.value,
             "candidate": snap.candidate,
             "ocr_text": self._last_home_ocr.raw_text if self._last_home_ocr else "",
