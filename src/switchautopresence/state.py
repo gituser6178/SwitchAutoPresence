@@ -10,7 +10,6 @@ from time import time
 
 class Mode(str, Enum):
     AUTO = "auto"
-    DIRECT = "direct"
     MANUAL = "manual"
     CLEARED = "cleared"
 
@@ -111,18 +110,6 @@ class Session:
             self.confirmed = None
             self.started_at = None
 
-    def use_direct_capture(self) -> None:
-        """Discord handles video; do not claim a game without manual selection."""
-        with self._lock:
-            self.mode = Mode.DIRECT
-            self.manual_title = None
-            self.screen = Screen.UNKNOWN
-            self.candidate = None
-            self.confirmed = None
-            self.started_at = None
-            self._non_home_count = 0
-            self._ocr_misses = 0
-
     def set_manual(self, title: str) -> None:
         title = " ".join(title.strip().split())
         if not title:
@@ -161,8 +148,6 @@ class Session:
                     game=self.manual_title,
                     started_at=self.started_at,
                 )
-            elif self.mode == Mode.DIRECT:
-                activity = Activity(details="Streaming Nintendo Switch")
             elif self.mode == Mode.AUTO:
                 if self.screen in (Screen.HOME, Screen.LAUNCHING):
                     activity = Activity(details="Browsing HOME" if self.screen == Screen.HOME else "Launching game")

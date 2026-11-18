@@ -22,6 +22,9 @@ def load_mode(path: Path | None = None) -> tuple[Mode, str | None]:
         return Mode.AUTO, None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("mode") == "direct":
+            # Migrate legacy streaming mode without grabbing video on startup.
+            return Mode.CLEARED, None
         mode = Mode(data["mode"])
         title = data.get("manual_title")
         if mode == Mode.MANUAL and (not isinstance(title, str) or not title.strip()):

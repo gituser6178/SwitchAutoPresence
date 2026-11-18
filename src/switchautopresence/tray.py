@@ -1,18 +1,11 @@
-"""Windows system tray integration, safely isolated from Tkinter's UI thread.
-
-The tray icon uses pystray in a background thread; its callbacks only place
-messages in a thread-safe queue. Tkinter processes those messages on its
-own main thread to show controls, mute audio or exit.
-"""
+"""Windows tray for opening the presence controller and exiting."""
 
 from __future__ import annotations
-
 from threading import Thread
 
 
 def create_icon_image():
     from PIL import Image, ImageDraw
-
     image = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((5, 7, 59, 49), radius=10, fill=(29, 91, 186, 255))
@@ -42,22 +35,15 @@ class TrayController:
             if api is None:
                 import pystray as api
         except ImportError as exc:
-            raise RuntimeError(
-                'System tray support requires: python -m pip install -e ".[all]"'
-            ) from exc
-
+            raise RuntimeError('Tray requires: python -m pip install -e ".[all]"') from exc
         image = self._icon_image if self._icon_image is not None else create_icon_image()
         menu = api.Menu(
-            api.MenuItem("Open SwitchAutoPresence", lambda icon, item: self._events.put("show"), default=True),
-            api.MenuItem("Mute / Unmute HDMI audio", lambda icon, item: self._events.put("mute")),
-            api.MenuItem("Exit SwitchAutoPresence", lambda icon, item: self._events.put("exit")),
+            api.MenuItem("Open SwitchAutoPresence",
+                         lambda icon, item: self._events.put("show"), default=True),
+            api.MenuItem("Exit SwitchAutoPresence",
+                         lambda icon, item: self._events.put("exit")),
         )
-        icon = api.Icon(
-            "SwitchAutoPresence",
-            image,
-            "SwitchAutoPresence — HDMI audio and Discord presence",
-            menu,
-        )
+        icon = api.Icon("SwitchAutoPresence", image, "SwitchAutoPresence — Discord game status", menu)
         self._icon = icon
         self._thread = Thread(target=icon.run, name="switch-tray", daemon=True)
         try:
