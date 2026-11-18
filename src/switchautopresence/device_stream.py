@@ -1,8 +1,7 @@
 """Own exactly one capture-card video handle and publish the latest frame.
 
 A *single* reader thread owns OpenCV's VideoCapture from open to release.
-The GUI preview and HOME recognizer consume the same in-memory frame, never
-reopening the card. Video capture does not include HDMI audio.
+Only HOME recognition reads in-memory frames. No preview, streaming or audio.
 """
 
 from __future__ import annotations
@@ -51,9 +50,7 @@ class VideoOptions:
 class DeviceStream:
     """One background hardware reader; no recording, sharing, or remote I/O.
 
-    Opening may fail while Discord is directly using the same capture card.
-    The app should then offer manual mode or ask the user to stop direct
-    card capture and screen-share the SwitchAutoPresence preview instead.
+    Discord may own the device exclusively. Manual selection does not open it.
     """
 
     def __init__(
@@ -172,8 +169,8 @@ class DeviceStream:
                 if cap is None:
                     self.error = (
                         f"Unable to open capture device {self.options.device}. "
-                        "If Discord is directly capturing it, stop that capture "
-                        "and share the SwitchAutoPresence window instead."
+                        "Discord may be using it. Choose Manual game mode; "
+                        "Auto requires shared video access."
                     )
                     break
                 try:

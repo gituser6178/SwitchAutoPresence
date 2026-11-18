@@ -1,4 +1,4 @@
-"""Windows tray behaviour without a real taskbar or graphical display."""
+"""Tray tests without a physical Windows taskbar."""
 
 from queue import SimpleQueue
 from threading import Event
@@ -9,9 +9,7 @@ from switchautopresence.tray import TrayController
 
 class FakeItem:
     def __init__(self, text, callback, default=False):
-        self.text = text
-        self.callback = callback
-        self.default = default
+        self.text, self.callback, self.default = text, callback, default
 
 
 class FakeMenu:
@@ -23,9 +21,6 @@ class FakeIcon:
     last = None
 
     def __init__(self, name, image, title, menu):
-        self.name = name
-        self.image = image
-        self.title = title
         self.menu = menu
         self.started = Event()
         self.stopped = Event()
@@ -40,46 +35,43 @@ class FakeIcon:
 
 
 class FakeTrayAPI:
-    Menu = FakeMenu
-    MenuItem = FakeItem
-    Icon = FakeIcon
+    Menu, MenuItem, Icon = FakeMenu, FakeItem, FakeIcon
 
 
-def test_tray_actions_are_queued_for_tk_main_thread():
+def test_tray_open_and_exit_only():
     events = SimpleQueue()
-    tray = TrayController(events, api=FakeTrayAPI, icon_image="mock-icon")
+    tray = TrayController(events, api=FakeTrayAPI, icon_image="fake")
     tray.start()
-    assert tray.running
     icon = FakeIcon.last
     assert icon.started.wait(1)
-    assert icon.name == "SwitchAutoPresence"
+    assert len(icon.menu.items) == 2
     assert icon.menu.items[0].default
     for item in icon.menu.items:
         item.callback(icon, item)
-    assert [events.get_nowait() for _ in range(3)] == ["show", "mute", "exit"]
+    assert [events.get_nowait() for _ in range(2)] == ["show", "exit"]
     tray.stop()
     assert icon.stopped.is_set()
     assert not tray.running
 
 
-def test_tray_start_is_idempotent_and_stop_is_safe():
-    events = SimpleQueue()
-    tray = TrayController(events, api=FakeTrayAPI, icon_image="mock-icon")
+def test_tray_start_twice_and_stop_twice():
+    tray = TrayController(SimpleQueue(), api=FakeTrayAPI, icon_image="fake")
     tray.start()
-    original = FakeIcon.last
+    icon = FakeIcon.last
     tray.start()
-    assert FakeIcon.last is original
+    assert FakeIcon.last is icon
     tray.stop()
     tray.stop()
 
 
-def test_gui_has_tray_and_foreground_stream_picker():
+def test_gui_has_presence_controls_only():
     file = Path(__file__).resolve().parents[1] / "src" / "switchautopresence" / "gui.py"
-    code = file.read_text(encoding="utf-8")
-    compile(code, str(file), "exec")
-    assert "Minimize to tray" in code
-    assert "tray_controller[0].start()" in code
-    assert 'elif action == "exit"' in code
-    assert "win.lift()" in code
-    assert "root.after_idle(send_stream_to_background)" not in code
-    assert "Discord direct" in code
+    source = file.read_text(encoding="utf-8")
+    compile(source, str(file), "exec")
+    assert "Minimize to tray" in source
+    assert "Try automatic detection" in source
+    assert "Set Discord game" in source
+    assert "ImageTk" not in source
+    assert "cv2" not in source
+    assert "audio_monitor" not in source
+    assert "stream_window" not in source

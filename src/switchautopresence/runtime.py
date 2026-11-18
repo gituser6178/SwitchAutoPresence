@@ -1,8 +1,7 @@
-"""Run the single-owner capture feed, GUI preview, OCR and Discord presence.
+"""Background HOME recognition and Discord Rich Presence only.
 
-Capture ownership lives inside DeviceStream. The GUI and recognizer only
-borrow its latest in-memory frame; neither opens a second AVerMedia handle.
-Manual mode releases the card so users may stream it directly from Discord.
+No video display, video recording, stream window, or audio relay.
+Manual mode releases video for Discord native streaming.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ from threading import Event, RLock, Thread
 from time import monotonic
 
 from .artwork import ArtworkCatalog, _validate_asset
-from .audio_monitor import AudioMonitor
 from .catalog import GameCatalog
 from .device_stream import DeviceStream, VideoOptions
 from .discord_presence import DiscordPublisher
@@ -24,11 +22,7 @@ LOG = logging.getLogger(__name__)
 
 
 class Runtime:
-    """Screen-independent state plus one owned video source.
-
-    The main UI remains responsive if a driver takes time to open a device.
-    Video is never recorded, uploaded or copied into an extra capture handle.
-    """
+    """HOME state, optional capture reader and Discord publisher."""
 
     def __init__(
         self, *, app_id: str | None = None, device: int | None = None,
@@ -63,14 +57,11 @@ class Runtime:
         self._next_recognition = 0.0
         self._last_home_ocr = None  # last HOME OCR result retained for diagnosis
         self._home_streak = 0
-        self._audio: AudioMonitor | None = None
-        self._audio_muted = False
+        self._capture_blocked = False
         self.error: str | None = None
         mode, manual = load_mode(settings_file)
         if mode == Mode.MANUAL and manual:
             self.session.set_manual(manual)
-        elif mode == Mode.DIRECT:
-            self.session.use_direct_capture()
         elif mode == Mode.CLEARED:
             self.session.clear()
 
@@ -85,7 +76,6 @@ class Runtime:
         self._stop.set()
         if self._worker:
             self._worker.join(timeout=5)
-        self.disable_audio()
         self._stop_capture()
         self.publisher.close()
 
@@ -96,6 +86,7 @@ class Runtime:
         options = VideoOptions(device, backend, width, height, fps)
         with self._config_lock:
             self._options = options
+            self._capture_blocked = False
 
     def select_manual(self, title: str, image: str | None = None) -> None:
         if image is not None:
@@ -110,15 +101,11 @@ class Runtime:
                 self.error = f"Could not save artwork: {exc}"
         self._persist()
 
-    def select_direct(self) -> None:
-        """Give video to Discord; keep local HDMI sound through our audio relay."""
-        self.error = None
-        self.session.use_direct_capture()
-        self._persist()
-
     def select_auto(self) -> None:
         self.error = None
         self.session.resume_auto()
+        with self._config_lock:
+            self._capture_blocked = False
         self._last_home_ocr = None
         self._home_streak = 0
         self._dark_count = 0
@@ -136,45 +123,11 @@ class Runtime:
         except OSError as exc:
             self.error = f"Could not save preferences: {exc}"
 
-    def enable_audio(
-        self, input_device: int, *, output_device: int | None = None,
-        monitor_factory=AudioMonitor,
-    ) -> None:
-        # Audio is independent of video ownership. Discord may own video
-        # while this process uses the capture-card HDMI recording endpoint.
-        if self._audio:
-            self.disable_audio()
-        if output_device is None:
-            audio = monitor_factory(input_device)
-        else:
-            audio = monitor_factory(input_device, output_device=output_device)
-        try:
-            audio.start()
-        except Exception as exc:
-            self.error = f"Audio monitoring could not start: {exc}"
-            raise RuntimeError(self.error) from exc
-        self._audio = audio
-        if self._audio_muted and hasattr(audio, "set_muted"):
-            audio.set_muted(True)
-        self.error = None
-
-    def set_audio_muted(self, muted: bool) -> None:
-        self._audio_muted = bool(muted)
-        if self._audio is not None:
-            self._audio.set_muted(self._audio_muted)
-
-    def disable_audio(self) -> None:
-        if self._audio is not None:
-            audio, self._audio = self._audio, None
-            try:
-                audio.stop()
-            except Exception as exc:
-                self.error = f"Audio stop problem: {exc}"
-
     def _stop_capture(self) -> None:
         with self._config_lock:
             reader, self._reader = self._reader, None
             self._active_options = None
+            self._last_frame_at = None
         if reader is not None:
             try:
                 reader.stop()
@@ -194,6 +147,7 @@ class Runtime:
             self.error = None
         except Exception as exc:
             self.error = f"Capture startup failed: {exc}"
+            self._capture_blocked = True
 
     def _observe(self, frame) -> None:
         result = self.recognizer.analyze(frame)
@@ -230,8 +184,6 @@ class Runtime:
             if mode != Mode.AUTO or desired is None:
                 if reader is not None:
                     self._stop_capture()
-                # Do not stop HDMI audio in Manual/Discord-direct modes:
-                # local headphones still need the capture-card sound.
                 if mode == Mode.AUTO and desired is None:
                     self.error = "Select a capture device index, or use Manual mode"
             else:
@@ -240,7 +192,7 @@ class Runtime:
                     reader = None
                     next_capture_retry = 0.0
 
-                if reader is None and now >= next_capture_retry:
+                if reader is None and not self._capture_blocked and now >= next_capture_retry:
                     self._start_capture(desired)
                     next_capture_retry = now + 8.0
                     with self._config_lock:
@@ -250,10 +202,9 @@ class Runtime:
                     if reader.closed:
                         self.session.no_signal()
                         self.error = reader.error or "Video capture stopped"
-                        # A failed video feed must not silence an independent
-                        # HDMI recording endpoint.
+                        # Avoid repeatedly competing with Discord for the card.
+                        self._capture_blocked = True
                         self._stop_capture()
-                        next_capture_retry = now + 8.0
                     else:
                         packet = reader.latest()
                         if packet is not None and packet.sequence != self._last_sequence:
@@ -274,14 +225,6 @@ class Runtime:
 
             self._stop.wait(.25)
 
-    def preview_frame(self):
-        """Latest same-owner camera frame, or None when not capturing."""
-        if self.session.snapshot().mode != Mode.AUTO:
-            return None
-        with self._config_lock:
-            reader = self._reader
-        return reader.latest() if reader is not None and not reader.closed else None
-
     def status(self) -> dict:
         snap = self.session.snapshot()
         with self._config_lock:
@@ -289,7 +232,8 @@ class Runtime:
             options = self._options
         return {
             "mode": snap.mode.value,
-            "discord_owns_video": snap.mode in (Mode.DIRECT, Mode.MANUAL),
+            "started_at": snap.activity.started_at if snap.activity else None,
+            "capture_blocked": self._capture_blocked,
             "screen": snap.screen.value,
             "candidate": snap.candidate,
             "ocr_text": self._last_home_ocr.raw_text if self._last_home_ocr else "",
@@ -307,11 +251,5 @@ class Runtime:
             "target_fps": options.fps if options else None,
             "using_defaults": bool(reader and reader.using_defaults),
             "frame_age": round(self.clock() - self._last_frame_at, 1) if self._last_frame_at else None,
-            "audio_enabled": bool(self._audio and self._audio.running),
-            "audio_muted": self._audio_muted,
-            "audio_input": self._audio.input_device if self._audio else None,
-            "audio_output": getattr(self._audio, "output_device", None) if self._audio else None,
-            "audio_levels": self._audio.levels() if self._audio and self._audio.running else None,
-            "audio_error": getattr(self._audio, "error", None) if self._audio else None,
             "error": self.error or (reader.error if reader else None) or self.publisher.error,
         }

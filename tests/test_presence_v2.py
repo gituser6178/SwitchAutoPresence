@@ -10,7 +10,6 @@ from switchautopresence.recognition import FrameKind, HomeRecognizer, looks_like
 from switchautopresence.runtime import Runtime
 from switchautopresence.settings import load_artwork, load_mode, save_mode
 from switchautopresence.state import Activity, Mode, Screen, Session
-from switchautopresence.window_capture import WindowCapture
 
 
 def session():
@@ -252,55 +251,6 @@ def test_unknown_selected_game_stays_home():
     assert result.title is None
 
 
-class FakeControl:
-    def __init__(self):
-        self.stopped = False
-    def stop(self):
-        self.stopped = True
-
-
-class FakeWGC:
-    instance = None
-    def __init__(self, **kwargs):
-        self.options = kwargs
-        self.callbacks = {}
-        self.control = FakeControl()
-        FakeWGC.instance = self
-    def event(self, handler):
-        self.callbacks[handler.__name__] = handler
-    def start_free_threaded(self):
-        return self.control
-    def emit(self, frame):
-        self.callbacks["on_frame_arrived"](type("Frame", (), {"frame_buffer": frame})(), None)
-
-
-def test_window_capture_frames_are_sampled_and_copied():
-    now = [1]
-    src = WindowCapture("VideoGameCapture", interval_seconds=1, capture_class=FakeWGC, clock=lambda: now[0])
-    src.start()
-    raw = np.full((100, 200, 4), 50, dtype=np.uint8)
-    FakeWGC.instance.emit(raw)
-    result = src.poll()
-    assert result[1].shape == (100, 200, 3)
-    raw[:] = 0
-    assert np.mean(result[1]) == 50
-    FakeWGC.instance.emit(raw)
-    assert src.poll() is None
-    now[0] = 3
-    FakeWGC.instance.emit(raw)
-    assert src.poll() is not None
-    src.stop()
-    assert FakeWGC.instance.control.stopped
-
-
-def test_viewer_close_event():
-    src = WindowCapture("Viewer", capture_class=FakeWGC)
-    src.start()
-    FakeWGC.instance.callbacks["on_closed"]()
-    assert src.closed
-    src.stop()
-
-
 class FakePublisher:
     error = None
     def sync(self, activity):
@@ -373,14 +323,15 @@ def test_invalid_local_prefs_fail_safe(tmp_path):
     assert load_mode(path) == (Mode.AUTO, None)
 
 
-def test_cli_has_old_and_new_commands():
+def test_cli_is_presence_only():
     parser = make_parser()
     assert parser.parse_args(["probe", "--device", "1"]).backend == "dshow"
-    assert parser.parse_args(["windows"]).command == "windows"
-    assert parser.parse_args(["probe-window", "--seconds", "10"]).seconds == 10
-    assert parser.parse_args(["scan-window", "--roi", "0.1,0.2,0.7,0.3"]).roi == "0.1,0.2,0.7,0.3"
+    assert parser.parse_args(["scan-device", "--device", "1"]).command == "scan-device"
     assert parser.parse_args(["app", "--app-id", "123"]).app_id == "123"
-
+    with pytest.raises(SystemExit):
+        parser.parse_args(["audio-devices"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["scan-window"])
 
 def test_ocr_temporary_miss_keeps_candidate_before_launch():
     s = session()
